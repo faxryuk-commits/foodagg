@@ -27,7 +27,7 @@ importers:
   apps/admin-panel:
     dependencies:
       '@food-platform/shared':
-        specifier: '*'
+        specifier: workspace:*
         version: link:../../packages/shared
       '@radix-ui/react-dialog':
         specifier: ^1.0.5
@@ -100,7 +100,7 @@ importers:
   apps/merchant-app:
     dependencies:
       '@food-platform/shared':
-        specifier: '*'
+        specifier: workspace:*
         version: link:../../packages/shared
       '@radix-ui/react-dialog':
         specifier: ^1.0.5
@@ -179,7 +179,7 @@ importers:
   apps/user-app:
     dependencies:
       '@food-platform/shared':
-        specifier: '*'
+        specifier: workspace:*
         version: link:../../packages/shared
       '@radix-ui/react-dialog':
         specifier: ^1.0.5
@@ -258,10 +258,10 @@ importers:
   packages/api:
     dependencies:
       '@food-platform/database':
-        specifier: '*'
+        specifier: workspace:*
         version: link:../database
       '@food-platform/shared':
-        specifier: '*'
+        specifier: workspace:*
         version: link:../shared
       bcryptjs:
         specifier: ^2.4.3
