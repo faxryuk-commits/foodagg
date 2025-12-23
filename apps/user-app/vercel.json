@@ -3,7 +3,6 @@
   "installCommand": "cd ../.. && npm install",
   "buildCommand": "cd ../.. && npx turbo run build --filter=@food-platform/user-app",
   "outputDirectory": ".next",
-  "framework": "nextjs",
-  "rootDirectory": "apps/user-app"
+  "framework": "nextjs"
 }
 

@@ -3,7 +3,6 @@
   "installCommand": "cd ../.. && npm install",
   "buildCommand": "cd ../.. && npx turbo run build --filter=@food-platform/admin-panel",
   "outputDirectory": ".next",
-  "framework": "nextjs",
-  "rootDirectory": "apps/admin-panel"
+  "framework": "nextjs"
 }
 

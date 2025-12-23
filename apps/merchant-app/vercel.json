@@ -3,7 +3,6 @@
   "installCommand": "cd ../.. && npm install",
   "buildCommand": "cd ../.. && npx turbo run build --filter=@food-platform/merchant-app",
   "outputDirectory": ".next",
-  "framework": "nextjs",
-  "rootDirectory": "apps/merchant-app"
+  "framework": "nextjs"
 }
 
