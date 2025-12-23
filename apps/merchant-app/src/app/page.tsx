@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Link from 'next/link';
 import {
   Bell,
   Check,
@@ -170,7 +171,7 @@ export default function MerchantDashboard() {
 
         {/* Navigation */}
         <nav className="flex-1 p-3 space-y-1">
-          <button className="sidebar-item-active w-full">
+          <Link href="/" className="sidebar-item-active w-full flex items-center gap-2">
             <LayoutDashboard className="w-5 h-5" />
             Заказы
             {newOrders.length > 0 && (
@@ -178,19 +179,19 @@ export default function MerchantDashboard() {
                 {newOrders.length}
               </span>
             )}
-          </button>
-          <button className="sidebar-item w-full">
+          </Link>
+          <Link href="/menu" className="sidebar-item w-full flex items-center gap-2">
             <UtensilsCrossed className="w-5 h-5" />
             Меню
-          </button>
-          <button className="sidebar-item w-full">
+          </Link>
+          <Link href="/analytics" className="sidebar-item w-full flex items-center gap-2">
             <BarChart3 className="w-5 h-5" />
             Аналитика
-          </button>
-          <button className="sidebar-item w-full">
+          </Link>
+          <Link href="/settings" className="sidebar-item w-full flex items-center gap-2">
             <Settings className="w-5 h-5" />
             Настройки
-          </button>
+          </Link>
         </nav>
 
         {/* Bottom */}

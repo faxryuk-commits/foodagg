@@ -241,11 +241,11 @@ export default function HomePage() {
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 safe-bottom">
         <div className="max-w-lg mx-auto flex items-center justify-around py-2">
-          <NavItem icon="🏠" label="Главная" active />
-          <NavItem icon="🔍" label="Поиск" />
-          <NavItem icon="🛒" label="Корзина" badge={2} />
-          <NavItem icon="📋" label="Заказы" />
-          <NavItem icon="👤" label="Профиль" />
+          <NavItem icon="🏠" label="Главная" href="/" active />
+          <NavItem icon="🔍" label="Поиск" href="/search" />
+          <NavItem icon="🛒" label="Корзина" href="/checkout" badge={2} />
+          <NavItem icon="📋" label="Заказы" href="/orders" />
+          <NavItem icon="👤" label="Профиль" href="/profile" />
         </div>
       </nav>
     </div>
@@ -255,16 +255,19 @@ export default function HomePage() {
 function NavItem({
   icon,
   label,
+  href,
   active,
   badge,
 }: {
   icon: string;
   label: string;
+  href: string;
   active?: boolean;
   badge?: number;
 }) {
   return (
-    <button
+    <Link
+      href={href}
       className={`flex flex-col items-center gap-0.5 px-4 py-1 relative ${
         active ? 'text-brand-600' : 'text-gray-500'
       }`}
@@ -276,7 +279,7 @@ function NavItem({
           {badge}
         </span>
       )}
-    </button>
+    </Link>
   );
 }
 
