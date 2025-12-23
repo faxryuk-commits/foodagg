@@ -317,7 +317,10 @@ export async function sendOTPviaSMS(phone: string): Promise<SendOTPResult> {
   const message = `Ваш код подтверждения: ${code}\n\nДействителен ${OTP_EXPIRY_MINUTES} минут.\nFood Platform`;
   const sent = await sendSMS(phone, message);
   
-  if (!sent) {
+  // In development, always return success and include code
+  const isDev = process.env.NODE_ENV !== 'production';
+  
+  if (!sent && !isDev) {
     return {
       success: false,
       message: 'Не удалось отправить SMS. Попробуйте другой способ.',
@@ -328,9 +331,12 @@ export async function sendOTPviaSMS(phone: string): Promise<SendOTPResult> {
   
   return {
     success: true,
-    message: `Код отправлен на ${phone.slice(0, 4)}***${phone.slice(-4)}`,
+    message: isDev 
+      ? `Код отправлен на ${phone.slice(0, 4)}***${phone.slice(-4)}. Код: ${code} (DEV)`
+      : `Код отправлен на ${phone.slice(0, 4)}***${phone.slice(-4)}`,
     expiresAt,
     channel: 'sms',
+    ...(isDev && { devCode: code }), // Include code in dev mode
   };
 }
 
@@ -365,7 +371,10 @@ export async function sendOTPviaEmail(email: string): Promise<SendOTPResult> {
   
   const sent = await sendEmail(email, `${code} — код подтверждения Food Platform`, html);
   
-  if (!sent) {
+  // In development, always return success and include code
+  const isDev = process.env.NODE_ENV !== 'production';
+  
+  if (!sent && !isDev) {
     return {
       success: false,
       message: 'Не удалось отправить email. Попробуйте другой способ.',
@@ -377,9 +386,12 @@ export async function sendOTPviaEmail(email: string): Promise<SendOTPResult> {
   const maskedEmail = email.replace(/(.{2})(.*)(@.*)/, '$1***$3');
   return {
     success: true,
-    message: `Код отправлен на ${maskedEmail}`,
+    message: isDev 
+      ? `Код отправлен на ${maskedEmail}. Код: ${code} (DEV)`
+      : `Код отправлен на ${maskedEmail}`,
     expiresAt,
     channel: 'email',
+    ...(isDev && { devCode: code }), // Include code in dev mode
   };
 }
 

@@ -350,6 +350,7 @@ router.post(
         message: result.message,
         expiresAt: result.expiresAt,
         channel: result.channel,
+        ...(result.devCode && { devCode: result.devCode }), // Include dev code if present
       },
     });
   })

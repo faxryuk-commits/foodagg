@@ -84,6 +84,12 @@ export default function AuthPage() {
         throw new Error(data.error?.message || 'Не удалось отправить код');
       }
       
+      // Log dev code if present
+      if (data.data?.devCode) {
+        console.log('🔐 DEV MODE: OTP Code:', data.data.devCode);
+        alert(`DEV MODE: Ваш код: ${data.data.devCode}`);
+      }
+      
       setIdentifier(fullIdentifier);
       setStep('otp');
       setCountdown(60);
