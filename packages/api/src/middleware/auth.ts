@@ -11,9 +11,10 @@ declare global {
       user?: {
         id: string;
         phone: string;
+        name: string | null;
         role: UserRole;
+        merchantId?: string;
       };
-      merchantId?: string;
     }
   }
 }
@@ -50,10 +51,22 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       throw new AppError(401, 'UNAUTHORIZED', 'Invalid token');
     }
     
+    // Get merchant ID if user is merchant
+    let merchantId: string | undefined;
+    if (session.user.role === 'MERCHANT_OWNER' || session.user.role === 'MERCHANT_STAFF') {
+      const merchantStaff = await prisma.merchantStaff.findFirst({
+        where: { userId: session.user.id },
+        select: { merchantId: true },
+      });
+      merchantId = merchantStaff?.merchantId;
+    }
+    
     req.user = {
       id: session.user.id,
       phone: session.user.phone,
+      name: session.user.name,
       role: session.user.role as UserRole,
+      merchantId,
     };
     
     next();
@@ -90,10 +103,22 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
     });
     
     if (session && session.expiresAt >= new Date()) {
+      // Get merchant ID if user is merchant
+      let merchantId: string | undefined;
+      if (session.user.role === 'MERCHANT_OWNER' || session.user.role === 'MERCHANT_STAFF') {
+        const merchantStaff = await prisma.merchantStaff.findFirst({
+          where: { userId: session.user.id },
+          select: { merchantId: true },
+        });
+        merchantId = merchantStaff?.merchantId;
+      }
+      
       req.user = {
         id: session.user.id,
         phone: session.user.phone,
+        name: session.user.name,
         role: session.user.role as UserRole,
+        merchantId,
       };
     }
     

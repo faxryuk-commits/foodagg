@@ -1,9 +1,11 @@
+import { getStoredTokens } from '@food-platform/shared';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 // Get auth token from localStorage
 function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('token');
+  const tokens = getStoredTokens();
+  return tokens?.accessToken || null;
 }
 
 // API request helper

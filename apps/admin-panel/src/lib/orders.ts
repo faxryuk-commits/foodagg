@@ -1,6 +1,14 @@
 'use client';
 
 import { create } from 'zustand';
+import {
+  getSocket,
+  onNewOrder,
+  onOrderUpdate,
+  onSLAWarning,
+  OrderEvent,
+  SLAWarningEvent,
+} from '@food-platform/shared';
 
 export interface OrderItem {
   id: string;
@@ -18,6 +26,7 @@ export interface Order {
     phone: string;
   };
   merchant: string;
+  merchantId: string;
   items: OrderItem[];
   total: number;
   type: 'DELIVERY' | 'PICKUP';
@@ -36,46 +45,40 @@ export interface Order {
 
 interface AdminOrderStore {
   orders: Order[];
+  slaWarnings: SLAWarningEvent[];
+  isConnected: boolean;
+  
   addOrder: (order: Order) => void;
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
+  addSLAWarning: (warning: SLAWarningEvent) => void;
+  clearSLAWarning: (orderId: string) => void;
+  setConnected: (connected: boolean) => void;
+  loadOrders: () => Promise<void>;
 }
 
-// Initial demo orders
-const demoOrders: Order[] = [
-  {
-    id: 'ORD-001',
-    orderNumber: '240001',
-    customer: { name: 'Алишер Каримов', phone: '+998 90 123 4567' },
-    merchant: 'Sushi Time',
-    items: [{ id: '1', name: 'Филадельфия x2', quantity: 2, price: 75000 }],
-    total: 185000,
-    status: 'PREPARING',
-    type: 'DELIVERY',
-    address: 'ул. Навои, 45, кв. 12',
-    createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    acceptedAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-    slaAcceptDeadline: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-    slaReadyDeadline: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
-    estimatedTime: 30,
-  },
-  {
-    id: 'ORD-002',
-    orderNumber: '240002',
-    customer: { name: 'Мария Иванова', phone: '+998 91 234 5678' },
-    merchant: 'Burger House',
-    items: [{ id: '2', name: 'Чизбургер x3', quantity: 3, price: 28000 }],
-    total: 98000,
-    status: 'SUBMITTED',
-    type: 'PICKUP',
-    createdAt: new Date().toISOString(),
-    slaAcceptDeadline: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-    slaReadyDeadline: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-    estimatedTime: 25,
-  },
-];
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
-export const useAdminOrderStore = create<AdminOrderStore>((set) => ({
-  orders: demoOrders,
+async function apiRequest<T>(endpoint: string): Promise<T> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('food_platform_token') : null;
+  
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || 'Request failed');
+  }
+  return data.data || data;
+}
+
+export const useAdminOrderStore = create<AdminOrderStore>((set, get) => ({
+  orders: [],
+  slaWarnings: [],
+  isConnected: false,
   
   addOrder: (order) => {
     set((state) => ({
@@ -88,40 +91,96 @@ export const useAdminOrderStore = create<AdminOrderStore>((set) => ({
       orders: state.orders.map((o) =>
         o.id === orderId ? { ...o, status } : o
       ),
+      slaWarnings: state.slaWarnings.filter(w => w.orderId !== orderId),
     }));
+  },
+  
+  addSLAWarning: (warning) => {
+    set((state) => ({
+      slaWarnings: [...state.slaWarnings.filter(w => w.orderId !== warning.orderId), warning],
+    }));
+  },
+  
+  clearSLAWarning: (orderId) => {
+    set((state) => ({
+      slaWarnings: state.slaWarnings.filter(w => w.orderId !== orderId),
+    }));
+  },
+  
+  setConnected: (connected) => {
+    set({ isConnected: connected });
+  },
+  
+  loadOrders: async () => {
+    try {
+      const data = await apiRequest<{ orders: Order[] }>('/api/admin/orders');
+      set({ orders: data.orders || [] });
+    } catch (error) {
+      console.error('Failed to load orders:', error);
+    }
   },
 }));
 
-// Listen for new orders from user app
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (event) => {
-    if (event.key === 'food-platform-new-order' && event.newValue) {
-      try {
-        const orderData = JSON.parse(event.newValue);
-        const store = useAdminOrderStore.getState();
-        
-        const newOrder: Order = {
-          id: orderData.id,
-          orderNumber: orderData.orderNumber,
-          customer: orderData.customer || { name: 'Клиент', phone: '+998 90 XXX XXXX' },
-          merchant: orderData.merchantName || 'Ресторан',
-          items: orderData.items || [],
-          total: orderData.total || 0,
-          status: 'SUBMITTED',
-          type: orderData.type || 'DELIVERY',
-          address: orderData.address,
-          comment: orderData.comment,
-          createdAt: orderData.createdAt || new Date().toISOString(),
-          slaAcceptDeadline: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-          slaReadyDeadline: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-          estimatedTime: 30,
-        };
-        
-        store.addOrder(newOrder);
-      } catch (e) {
-        console.error('Failed to parse order:', e);
-      }
+// Initialize WebSocket connection for admin
+export function initializeAdminSocket(): () => void {
+  const store = useAdminOrderStore.getState();
+  const socket = getSocket();
+  
+  socket.on('connect', () => {
+    store.setConnected(true);
+    // Load initial orders
+    store.loadOrders();
+  });
+  
+  socket.on('disconnect', () => {
+    store.setConnected(false);
+  });
+  
+  // Admin receives ALL orders
+  const unsubNewOrder = onNewOrder((event: OrderEvent) => {
+    if (event.order) {
+      const order: Order = {
+        id: event.order.id,
+        orderNumber: event.order.orderNumber,
+        status: event.order.status,
+        customer: {
+          name: event.order.user?.name || 'Клиент',
+          phone: event.order.user?.phone || '',
+        },
+        merchant: event.order.merchant?.name || 'Ресторан',
+        merchantId: event.order.merchantId,
+        items: event.order.items?.map((i: any) => ({
+          id: i.id,
+          name: i.menuItem?.name || i.name,
+          quantity: i.quantity,
+          price: i.price,
+        })) || [],
+        total: event.order.total,
+        type: event.order.type,
+        address: event.order.deliveryAddress?.street,
+        createdAt: event.order.createdAt,
+        slaAcceptDeadline: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        slaReadyDeadline: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        estimatedTime: 30,
+      };
+      
+      store.addOrder(order);
     }
   });
+  
+  const unsubOrderUpdate = onOrderUpdate((event: OrderEvent) => {
+    if (event.status) {
+      store.updateOrderStatus(event.orderId, event.status as Order['status']);
+    }
+  });
+  
+  const unsubSLAWarning = onSLAWarning((event: SLAWarningEvent) => {
+    store.addSLAWarning(event);
+  });
+  
+  return () => {
+    unsubNewOrder();
+    unsubOrderUpdate();
+    unsubSLAWarning();
+  };
 }
-

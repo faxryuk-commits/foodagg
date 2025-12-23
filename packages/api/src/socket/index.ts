@@ -51,13 +51,26 @@ export function setupSocketHandlers(io: SocketServer) {
     }
   });
 
-  io.on('connection', (socket: AuthenticatedSocket) => {
+  io.on('connection', async (socket: AuthenticatedSocket) => {
     console.log(`Socket connected: ${socket.id}, user: ${socket.userId || 'anonymous'}`);
     
     // Join merchant room if merchant
     if (socket.merchantId) {
       socket.join(`merchant:${socket.merchantId}`);
       console.log(`Socket ${socket.id} joined merchant room: ${socket.merchantId}`);
+    }
+    
+    // Join admin room if admin
+    if (socket.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: socket.userId },
+        select: { role: true },
+      });
+      
+      if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') {
+        socket.join('admin');
+        console.log(`Socket ${socket.id} joined admin room`);
+      }
     }
     
     // Subscribe to order updates

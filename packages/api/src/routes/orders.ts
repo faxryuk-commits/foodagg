@@ -188,9 +188,12 @@ router.post(
       ]);
     }
     
-    // Emit socket event to merchant
+    // Emit socket events
     const io = req.app.get('io');
+    // Notify merchant
     io.to(`merchant:${merchant.id}`).emit('order:new', { order });
+    // Notify admin room
+    io.to('admin').emit('order:new', { order });
     
     res.status(201).json({
       success: true,

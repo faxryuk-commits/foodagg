@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useOrderStore } from '@/store/orders';
 import { ordersAPI } from '@/lib/api';
-import { getSocket } from '@/lib/socket';
+import { useAuth } from '@/lib/auth';
 
 const deliveryAddress = {
   label: 'Дом',
@@ -44,6 +44,7 @@ function formatPrice(price: number): string {
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const { cart, merchantId, merchantName, updateQuantity, clearCart, addOrder } = useOrderStore();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [bonusToUse, setBonusToUse] = useState(0);
@@ -74,11 +75,17 @@ export default function CheckoutPage() {
       return;
     }
     
+    // Check if user is authenticated
+    if (!isAuthenticated) {
+      router.push(`/auth?redirect=${encodeURIComponent('/checkout')}`);
+      return;
+    }
+    
     setIsSubmitting(true);
     setError(null);
     
     try {
-      // Create order via API
+      // Create order via API - WebSocket will notify merchant/admin automatically
       const response = await ordersAPI.create({
         merchantId,
         items: cart.map(item => ({
@@ -112,51 +119,11 @@ export default function CheckoutPage() {
       // Clear cart
       clearCart();
       
-      // Notify via socket
-      const socket = getSocket();
-      socket.emit('order:created', { orderId: response.order.id });
-      
       // Redirect to order status page
       router.push(`/orders/${response.order.id}`);
     } catch (err: any) {
       console.error('Order creation failed:', err);
-      setError(err.message || 'Не удалось оформить заказ');
-      
-      // For demo: create mock order and redirect anyway
-      const mockOrderId = `demo-${Date.now()}`;
-      const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
-      const orderData = {
-        id: mockOrderId,
-        orderNumber,
-        status: 'SUBMITTED',
-        total,
-        items: cart,
-        merchantId: merchantId || 'demo',
-        merchantName: merchantName || 'Ресторан',
-        customer: { name: 'Клиент', phone: '+998 90 123 4567' },
-        address: `${deliveryAddress.street}, ${deliveryAddress.building}`,
-        comment,
-        type: 'DELIVERY',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      
-      addOrder(orderData);
-      clearCart();
-      
-      // Broadcast to other tabs (merchant app)
-      if (typeof window !== 'undefined') {
-        // Use localStorage for cross-tab communication
-        localStorage.setItem('food-platform-new-order', JSON.stringify(orderData));
-        // Trigger storage event
-        localStorage.removeItem('food-platform-new-order');
-        localStorage.setItem('food-platform-new-order', JSON.stringify({
-          ...orderData,
-          _timestamp: Date.now(), // Force change detection
-        }));
-      }
-      
-      router.push(`/orders/${mockOrderId}`);
+      setError(err.message || 'Не удалось оформить заказ. Попробуйте снова.');
     } finally {
       setIsSubmitting(false);
     }
