@@ -230,9 +230,18 @@ router.get(
     });
     
     // Aggregate by merchant
-    const byMerchant = metrics.reduce((acc, m) => {
-      if (!acc[m.merchantId]) {
-        acc[m.merchantId] = {
+    const byMerchant: Record<string, {
+      merchant: typeof metrics[0]['merchant'];
+      totalOrders: number;
+      slaBreached: number;
+      cancelled: number;
+      avgRating: number;
+      ratingCount: number;
+    }> = {};
+    
+    for (const m of metrics) {
+      if (!byMerchant[m.merchantId]) {
+        byMerchant[m.merchantId] = {
           merchant: m.merchant,
           totalOrders: 0,
           slaBreached: 0,
@@ -241,29 +250,26 @@ router.get(
           ratingCount: 0,
         };
       }
-      acc[m.merchantId].totalOrders += m.totalOrders;
-      acc[m.merchantId].slaBreached += m.slaBreached;
-      acc[m.merchantId].cancelled += m.cancelled;
+      byMerchant[m.merchantId].totalOrders += m.totalOrders;
+      byMerchant[m.merchantId].slaBreached += m.slaBreached;
+      byMerchant[m.merchantId].cancelled += m.cancelled;
       if (m.avgRating) {
-        acc[m.merchantId].avgRating += m.avgRating * m.reviewCount;
-        acc[m.merchantId].ratingCount += m.reviewCount;
+        byMerchant[m.merchantId].avgRating += m.avgRating * m.reviewCount;
+        byMerchant[m.merchantId].ratingCount += m.reviewCount;
       }
-      return acc;
-    }, {} as Record<string, unknown>);
+    }
     
     // Calculate averages
-    const result = Object.values(byMerchant).map((m: Record<string, unknown>) => ({
+    const result = Object.values(byMerchant).map((m) => ({
       ...m,
-      avgRating: (m.ratingCount as number) > 0 
-        ? (m.avgRating as number) / (m.ratingCount as number) 
-        : null,
-      slaRate: (m.totalOrders as number) > 0 
-        ? ((m.totalOrders as number) - (m.slaBreached as number)) / (m.totalOrders as number) * 100 
+      avgRating: m.ratingCount > 0 ? m.avgRating / m.ratingCount : null,
+      slaRate: m.totalOrders > 0 
+        ? (m.totalOrders - m.slaBreached) / m.totalOrders * 100 
         : 100,
     }));
     
     // Sort by SLA breach count (worst first)
-    result.sort((a, b) => (b.slaBreached as number) - (a.slaBreached as number));
+    result.sort((a, b) => b.slaBreached - a.slaBreached);
     
     res.json({
       success: true,
@@ -299,30 +305,35 @@ router.get(
     const merchantMap = Object.fromEntries(merchants.map((m) => [m.id, m]));
     
     // Aggregate by merchant
-    const byMerchant = cancellations.reduce((acc, c) => {
-      if (!acc[c.merchantId]) {
-        acc[c.merchantId] = {
+    const byMerchant: Record<string, {
+      merchant: typeof merchants[0] | undefined;
+      total: number;
+      byUser: number;
+      byMerchant: number;
+      reasons: Record<string, number>;
+    }> = {};
+    
+    for (const c of cancellations) {
+      if (!byMerchant[c.merchantId]) {
+        byMerchant[c.merchantId] = {
           merchant: merchantMap[c.merchantId],
           total: 0,
           byUser: 0,
           byMerchant: 0,
-          reasons: {} as Record<string, number>,
+          reasons: {},
         };
       }
-      acc[c.merchantId].total += c._count.id;
-      if (c.cancelledBy === 'user') acc[c.merchantId].byUser += c._count.id;
-      if (c.cancelledBy === 'merchant') acc[c.merchantId].byMerchant += c._count.id;
+      byMerchant[c.merchantId].total += c._count.id;
+      if (c.cancelledBy === 'user') byMerchant[c.merchantId].byUser += c._count.id;
+      if (c.cancelledBy === 'merchant') byMerchant[c.merchantId].byMerchant += c._count.id;
       if (c.cancelReason) {
-        acc[c.merchantId].reasons[c.cancelReason] = 
-          (acc[c.merchantId].reasons[c.cancelReason] || 0) + c._count.id;
+        byMerchant[c.merchantId].reasons[c.cancelReason] = 
+          (byMerchant[c.merchantId].reasons[c.cancelReason] || 0) + c._count.id;
       }
-      return acc;
-    }, {} as Record<string, unknown>);
+    }
     
     const result = Object.values(byMerchant);
-    result.sort((a: Record<string, unknown>, b: Record<string, unknown>) => 
-      (b.total as number) - (a.total as number)
-    );
+    result.sort((a, b) => b.total - a.total);
     
     res.json({
       success: true,

@@ -75,7 +75,7 @@ router.post(
     
     // Calculate totals
     const itemsWithPrices = data.items.map((item) => {
-      const menuItem = menuItems.find((m) => m.id === item.menuItemId)!;
+      const menuItem = menuItems.find((mi) => mi.id === item.menuItemId)!;
       return {
         menuItemId: item.menuItemId,
         name: menuItem.name,

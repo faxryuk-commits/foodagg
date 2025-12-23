@@ -86,9 +86,13 @@ router.get(
       },
     });
     
+    // Type for merchant with distance
+    type MerchantWithDistance = typeof merchants[0] & { distance?: number };
+    let merchantsWithDistance: MerchantWithDistance[] = merchants;
+    
     // Calculate distance if location provided
     if (filters.lat && filters.lng) {
-      merchants = merchants
+      merchantsWithDistance = merchants
         .map((m) => ({
           ...m,
           distance: calculateDistance(filters.lat!, filters.lng!, m.lat, m.lng),
@@ -97,16 +101,19 @@ router.get(
       
       // Sort by distance by default
       if (!filters.sortBy || filters.sortBy === 'distance') {
-        merchants.sort((a, b) => (a.distance || 0) - (b.distance || 0));
+        merchantsWithDistance.sort((a, b) => (a.distance || 0) - (b.distance || 0));
       }
     }
     
     // Sort
     if (filters.sortBy === 'rating') {
-      merchants.sort((a, b) => b.rating - a.rating);
+      merchantsWithDistance.sort((a, b) => b.rating - a.rating);
     } else if (filters.sortBy === 'popular') {
-      merchants.sort((a, b) => b.orderCount - a.orderCount);
+      merchantsWithDistance.sort((a, b) => b.orderCount - a.orderCount);
     }
+    
+    // Reassign for further processing
+    merchants = merchantsWithDistance;
     
     // Paginate
     const total = merchants.length;
@@ -114,7 +121,8 @@ router.get(
     
     // Calculate estimated delivery time
     const merchantsWithETA = paginatedMerchants.map((m) => {
-      const distance = (m as { distance?: number }).distance || 5;
+      const mWithDist = m as MerchantWithDistance;
+      const distance = mWithDist.distance || 5;
       const baseTime = m.slaReadyTime || 30;
       const deliveryTime = Math.ceil(distance * 2);
       const busyTime = m.isBusy ? m.busyMinutes : 0;
@@ -262,14 +270,16 @@ router.get(
       _count: { rating: true },
     });
     
-    const ratingDistribution = {
+    const ratingDistribution: Record<number, number> = {
       1: 0,
       2: 0,
       3: 0,
       4: 0,
       5: 0,
-      ...Object.fromEntries(distribution.map((d) => [d.rating, d._count.rating])),
     };
+    distribution.forEach((d) => {
+      ratingDistribution[d.rating] = d._count.rating;
+    });
     
     res.json({
       success: true,

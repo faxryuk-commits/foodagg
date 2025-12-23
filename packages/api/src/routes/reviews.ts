@@ -155,7 +155,7 @@ router.get(
         totalPages: Math.ceil(total / pageSize),
         stats: {
           averageRating: avgRating._avg.rating || 0,
-          distribution: Object.fromEntries(stats.map((s) => [s.rating, s._count.rating])),
+          distribution: Object.fromEntries(stats.map((s): [number, number] => [s.rating, s._count.rating])),
         },
       },
     });
