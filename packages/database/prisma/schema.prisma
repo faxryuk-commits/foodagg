@@ -88,6 +88,7 @@ model User {
   id            String    @id @default(cuid())
   email         String?   @unique
   phone         String    @unique
+  telegramId    String?   @unique  // Telegram chat ID for auth
   passwordHash  String?
   name          String?
   avatar        String?
@@ -116,6 +117,7 @@ model User {
   
   @@index([phone])
   @@index([email])
+  @@index([telegramId])
 }
 
 model Session {
@@ -131,6 +133,20 @@ model Session {
   
   @@index([userId])
   @@index([token])
+}
+
+// OTP Codes for multi-channel authentication
+model OTPCode {
+  id         String   @id @default(cuid())
+  identifier String   // phone, email, or telegramId
+  channel    String   // 'sms', 'email', 'telegram'
+  code       String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+  
+  @@index([identifier, channel])
+  @@index([code])
 }
 
 model Address {

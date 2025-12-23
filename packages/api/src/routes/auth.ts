@@ -5,6 +5,14 @@ import { prisma } from '@food-platform/database';
 import { registerSchema, loginSchema } from '@food-platform/shared';
 import { asyncHandler, AppError } from '../middleware/error';
 import { authenticate } from '../middleware/auth';
+import {
+  sendOTPviaSMS,
+  sendOTPviaEmail,
+  sendOTPviaTelegram,
+  verifyOTP,
+  getTelegramAuthLink,
+  OTPChannel,
+} from '../services/otp';
 
 const router = Router();
 
@@ -286,6 +294,247 @@ router.post(
     res.json({
       success: true,
       data: { message: 'Logged out from all devices' },
+    });
+  })
+);
+
+// ============================================
+// OTP Authentication Routes
+// ============================================
+
+// Send OTP
+router.post(
+  '/otp/send',
+  asyncHandler(async (req, res) => {
+    const { identifier, channel } = req.body as { identifier: string; channel: OTPChannel };
+    
+    if (!identifier || !channel) {
+      throw new AppError(400, 'MISSING_PARAMS', 'identifier and channel are required');
+    }
+    
+    if (!['sms', 'email', 'telegram'].includes(channel)) {
+      throw new AppError(400, 'INVALID_CHANNEL', 'Channel must be sms, email, or telegram');
+    }
+    
+    let result;
+    switch (channel) {
+      case 'sms':
+        // Validate phone format
+        if (!/^\+998\d{9}$/.test(identifier)) {
+          throw new AppError(400, 'INVALID_PHONE', 'Phone must be in format +998XXXXXXXXX');
+        }
+        result = await sendOTPviaSMS(identifier);
+        break;
+        
+      case 'email':
+        // Validate email format
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) {
+          throw new AppError(400, 'INVALID_EMAIL', 'Invalid email format');
+        }
+        result = await sendOTPviaEmail(identifier);
+        break;
+        
+      case 'telegram':
+        // For telegram, identifier is the chat ID
+        result = await sendOTPviaTelegram(identifier);
+        break;
+    }
+    
+    if (!result.success) {
+      throw new AppError(429, 'OTP_FAILED', result.message);
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        message: result.message,
+        expiresAt: result.expiresAt,
+        channel: result.channel,
+      },
+    });
+  })
+);
+
+// Verify OTP and login
+router.post(
+  '/otp/verify',
+  asyncHandler(async (req, res) => {
+    const { identifier, channel, code, name } = req.body as {
+      identifier: string;
+      channel: OTPChannel;
+      code: string;
+      name?: string;
+    };
+    
+    if (!identifier || !channel || !code) {
+      throw new AppError(400, 'MISSING_PARAMS', 'identifier, channel, and code are required');
+    }
+    
+    // Verify OTP
+    const verification = await verifyOTP(identifier, channel, code);
+    if (!verification.valid) {
+      throw new AppError(401, 'INVALID_OTP', verification.message);
+    }
+    
+    // Find or create user based on channel
+    let user;
+    
+    switch (channel) {
+      case 'sms':
+        user = await prisma.user.findUnique({ where: { phone: identifier } });
+        if (!user) {
+          // Create new user with phone
+          user = await prisma.user.create({
+            data: {
+              phone: identifier,
+              name: name || null,
+            },
+          });
+        }
+        break;
+        
+      case 'email':
+        user = await prisma.user.findUnique({ where: { email: identifier } });
+        if (!user) {
+          // Need phone for new user - check if provided
+          const { phone } = req.body;
+          if (!phone) {
+            // Return that user needs to provide phone
+            return res.json({
+              success: true,
+              data: {
+                verified: true,
+                requiresPhone: true,
+                message: 'Email verified. Please provide phone number to complete registration.',
+              },
+            });
+          }
+          user = await prisma.user.create({
+            data: {
+              email: identifier,
+              phone,
+              name: name || null,
+            },
+          });
+        }
+        break;
+        
+      case 'telegram':
+        user = await prisma.user.findUnique({ where: { telegramId: identifier } });
+        if (!user) {
+          // Need phone for new user
+          const { phone } = req.body;
+          if (!phone) {
+            return res.json({
+              success: true,
+              data: {
+                verified: true,
+                requiresPhone: true,
+                message: 'Telegram verified. Please provide phone number to complete registration.',
+              },
+            });
+          }
+          user = await prisma.user.create({
+            data: {
+              telegramId: identifier,
+              phone,
+              name: name || null,
+            },
+          });
+        }
+        break;
+    }
+    
+    // Create session
+    const session = await prisma.session.create({
+      data: {
+        userId: user.id,
+        token: crypto.randomUUID(),
+        refreshToken: crypto.randomUUID(),
+        userAgent: req.headers['user-agent'],
+        ipAddress: req.ip,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    });
+    
+    const tokens = generateTokens(user.id, session.id);
+    
+    // Update session with actual tokens
+    await prisma.session.update({
+      where: { id: session.id },
+      data: {
+        token: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      },
+    });
+    
+    // Update last login
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          phone: user.phone,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          bonusBalance: user.bonusBalance,
+        },
+        ...tokens,
+      },
+    });
+  })
+);
+
+// Get Telegram auth link
+router.get(
+  '/telegram/link',
+  asyncHandler(async (req, res) => {
+    const link = getTelegramAuthLink();
+    
+    res.json({
+      success: true,
+      data: {
+        link,
+        botUsername: process.env.TELEGRAM_BOT_USERNAME || 'FoodPlatformBot',
+      },
+    });
+  })
+);
+
+// Link Telegram to existing account
+router.post(
+  '/telegram/link',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const { telegramId } = req.body;
+    
+    if (!telegramId) {
+      throw new AppError(400, 'MISSING_TELEGRAM_ID', 'Telegram ID is required');
+    }
+    
+    // Check if telegram ID is already linked
+    const existing = await prisma.user.findUnique({
+      where: { telegramId },
+    });
+    
+    if (existing && existing.id !== req.user!.id) {
+      throw new AppError(409, 'TELEGRAM_LINKED', 'This Telegram account is already linked to another user');
+    }
+    
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { telegramId },
+    });
+    
+    res.json({
+      success: true,
+      data: { message: 'Telegram linked successfully' },
     });
   })
 );

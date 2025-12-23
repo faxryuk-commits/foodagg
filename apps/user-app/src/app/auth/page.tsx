@@ -1,17 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, ArrowRight, Loader2, Shield, Gift, Clock } from 'lucide-react';
-import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  Phone,
+  Mail,
+  Send,
+  ArrowLeft,
+  Loader2,
+  AlertCircle,
+  Check,
+  ChevronRight,
+} from 'lucide-react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+type AuthChannel = 'sms' | 'email' | 'telegram';
+type AuthStep = 'select' | 'input' | 'otp' | 'name';
 
 export default function AuthPage() {
-  const [step, setStep] = useState<'phone' | 'otp' | 'name'>('phone');
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get('redirect') || '/';
+  
+  const [step, setStep] = useState<AuthStep>('select');
+  const [channel, setChannel] = useState<AuthChannel>('sms');
+  const [identifier, setIdentifier] = useState('');
+  const [otp, setOtp] = useState('');
   const [name, setName] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
+  const [telegramLink, setTelegramLink] = useState<string | null>(null);
+
+  // Countdown timer
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
+
+  // Get Telegram link on mount
+  useEffect(() => {
+    fetch(`${API_URL}/api/auth/telegram/link`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setTelegramLink(data.data.link);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const formatPhone = (value: string) => {
     const numbers = value.replace(/\D/g, '');
@@ -21,63 +62,109 @@ export default function AuthPage() {
     return `${numbers.slice(0, 2)} ${numbers.slice(2, 5)} ${numbers.slice(5, 7)} ${numbers.slice(7, 9)}`;
   };
 
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = formatPhone(e.target.value);
-    if (formatted.replace(/\s/g, '').length <= 9) {
-      setPhone(formatted);
-    }
-  };
-
-  const handleOtpChange = (index: number, value: string) => {
-    if (value.length > 1) return;
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
+  const handleSendOTP = async () => {
+    setError(null);
+    setIsLoading(true);
     
-    // Auto-focus next input
-    if (value && index < 5) {
-      const nextInput = document.getElementById(`otp-${index + 1}`);
-      nextInput?.focus();
+    let fullIdentifier = identifier;
+    if (channel === 'sms') {
+      fullIdentifier = '+998' + identifier.replace(/\s/g, '');
     }
-  };
-
-  const handlePhoneSubmit = async () => {
-    setLoading(true);
-    // Simulate API call
-    await new Promise(r => setTimeout(r, 1000));
-    setLoading(false);
-    setStep('otp');
-    setCountdown(60);
     
-    // Countdown timer
-    const interval = setInterval(() => {
-      setCountdown(c => {
-        if (c <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return c - 1;
+    try {
+      const response = await fetch(`${API_URL}/api/auth/otp/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: fullIdentifier, channel }),
       });
-    }, 1000);
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Не удалось отправить код');
+      }
+      
+      setIdentifier(fullIdentifier);
+      setStep('otp');
+      setCountdown(60);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleOtpSubmit = async () => {
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setLoading(false);
-    // Check if new user
-    setStep('name'); // or redirect if existing user
+  const handleVerifyOTP = async () => {
+    setError(null);
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch(`${API_URL}/api/auth/otp/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, channel, code: otp, name: name || undefined }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Неверный код');
+      }
+      
+      // Check if requires additional info
+      if (data.data.requiresPhone) {
+        setStep('name');
+        return;
+      }
+      
+      // Save tokens and redirect
+      localStorage.setItem('food_platform_token', data.data.accessToken);
+      localStorage.setItem('food_platform_refresh_token', data.data.refreshToken);
+      localStorage.setItem('food_platform_user', JSON.stringify(data.data.user));
+      
+      router.push(redirect);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleNameSubmit = async () => {
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 1000));
-    // Redirect to home
-    window.location.href = '/';
+  const handleResendOTP = async () => {
+    if (countdown > 0) return;
+    
+    setError(null);
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch(`${API_URL}/api/auth/otp/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, channel }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Не удалось отправить код');
+      }
+      
+      setCountdown(60);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const openTelegram = () => {
+    if (telegramLink) {
+      window.open(telegramLink, '_blank');
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -85,196 +172,240 @@ export default function AuthPage() {
       >
         {/* Logo */}
         <div className="text-center mb-8">
-          <Link href="/">
-            <motion.div
-              className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500 to-pink-500 mb-4"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <span className="text-3xl">🍕</span>
-            </motion.div>
-          </Link>
-          <h1 className="text-2xl font-bold text-white">Food Platform</h1>
-          <p className="text-gray-400 mt-1">Доставка еды за 30 минут</p>
+          <motion.div
+            className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 mb-4 shadow-lg"
+            whileHover={{ scale: 1.05, rotate: 5 }}
+          >
+            <span className="text-4xl">🍕</span>
+          </motion.div>
+          <h1 className="text-2xl font-bold text-gray-900">Food Platform</h1>
+          <p className="text-gray-500 mt-1">Войдите или зарегистрируйтесь</p>
         </div>
 
         {/* Card */}
-        <motion.div
-          layout
-          className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-8"
-        >
+        <div className="bg-white rounded-2xl shadow-xl p-6">
           <AnimatePresence mode="wait">
-            {step === 'phone' && (
+            {/* Step: Select Channel */}
+            {step === 'select' && (
               <motion.div
-                key="phone"
+                key="select"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
+                className="space-y-4"
               >
-                <h2 className="text-xl font-bold text-white mb-2">Войти или создать аккаунт</h2>
-                <p className="text-gray-400 mb-6">Введите номер телефона для входа</p>
-                
-                <div className="relative mb-6">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 text-gray-400">
-                    <span className="text-lg">🇺🇿</span>
-                    <span>+998</span>
-                  </div>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={handlePhoneChange}
-                    placeholder="90 123 45 67"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-28 pr-4 py-4 text-white text-lg placeholder:text-gray-500 focus:outline-none focus:border-orange-500/50 transition-colors"
-                  />
-                </div>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                  Выберите способ входа
+                </h2>
 
                 <button
-                  onClick={handlePhoneSubmit}
-                  disabled={phone.replace(/\s/g, '').length !== 9 || loading}
-                  className="w-full py-4 bg-gradient-to-r from-orange-500 to-pink-500 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:from-orange-600 hover:to-pink-600 transition-all"
+                  onClick={() => { setChannel('sms'); setStep('input'); }}
+                  className="w-full p-4 border border-gray-200 rounded-xl flex items-center gap-4 hover:border-orange-300 hover:bg-orange-50 transition-all"
                 >
-                  {loading ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      Продолжить
-                      <ArrowRight className="w-5 h-5" />
-                    </>
-                  )}
+                  <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                    <Phone className="w-6 h-6 text-green-600" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="font-medium text-gray-900">SMS</p>
+                    <p className="text-sm text-gray-500">Получить код на телефон</p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
                 </button>
 
-                {/* Benefits */}
-                <div className="mt-8 grid grid-cols-3 gap-4 text-center">
-                  <div className="p-3 bg-white/5 rounded-xl">
-                    <Gift className="w-6 h-6 text-orange-400 mx-auto mb-2" />
-                    <div className="text-xs text-gray-400">Бонусы за заказы</div>
+                <button
+                  onClick={() => { setChannel('email'); setStep('input'); }}
+                  className="w-full p-4 border border-gray-200 rounded-xl flex items-center gap-4 hover:border-orange-300 hover:bg-orange-50 transition-all"
+                >
+                  <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                    <Mail className="w-6 h-6 text-blue-600" />
                   </div>
-                  <div className="p-3 bg-white/5 rounded-xl">
-                    <Clock className="w-6 h-6 text-orange-400 mx-auto mb-2" />
-                    <div className="text-xs text-gray-400">Быстрая доставка</div>
+                  <div className="flex-1 text-left">
+                    <p className="font-medium text-gray-900">Email</p>
+                    <p className="text-sm text-gray-500">Получить код на почту</p>
                   </div>
-                  <div className="p-3 bg-white/5 rounded-xl">
-                    <Shield className="w-6 h-6 text-orange-400 mx-auto mb-2" />
-                    <div className="text-xs text-gray-400">Безопасно</div>
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                </button>
+
+                <button
+                  onClick={openTelegram}
+                  className="w-full p-4 border border-gray-200 rounded-xl flex items-center gap-4 hover:border-orange-300 hover:bg-orange-50 transition-all"
+                >
+                  <div className="w-12 h-12 rounded-full bg-sky-100 flex items-center justify-center">
+                    <Send className="w-6 h-6 text-sky-600" />
                   </div>
-                </div>
+                  <div className="flex-1 text-left">
+                    <p className="font-medium text-gray-900">Telegram</p>
+                    <p className="text-sm text-gray-500">Войти через бота</p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                </button>
               </motion.div>
             )}
 
+            {/* Step: Input identifier */}
+            {step === 'input' && (
+              <motion.div
+                key="input"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
+              >
+                <button
+                  onClick={() => setStep('select')}
+                  className="flex items-center gap-2 text-gray-500 hover:text-gray-700"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Назад
+                </button>
+
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    {error}
+                  </div>
+                )}
+
+                {channel === 'sms' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Номер телефона
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 text-gray-400">
+                        <span>🇺🇿</span>
+                        <span className="text-gray-600">+998</span>
+                      </div>
+                      <input
+                        type="tel"
+                        value={identifier}
+                        onChange={(e) => {
+                          const formatted = formatPhone(e.target.value);
+                          if (formatted.replace(/\s/g, '').length <= 9) {
+                            setIdentifier(formatted);
+                          }
+                        }}
+                        placeholder="90 123 45 67"
+                        className="w-full border border-gray-300 rounded-xl pl-28 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {channel === 'email' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email адрес
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="email"
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)}
+                        placeholder="your@email.com"
+                        className="w-full border border-gray-300 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleSendOTP}
+                  disabled={
+                    isLoading ||
+                    (channel === 'sms' && identifier.replace(/\s/g, '').length !== 9) ||
+                    (channel === 'email' && !identifier.includes('@'))
+                  }
+                  className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:from-orange-600 hover:to-amber-600 transition-all"
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    'Получить код'
+                  )}
+                </button>
+              </motion.div>
+            )}
+
+            {/* Step: Enter OTP */}
             {step === 'otp' && (
               <motion.div
                 key="otp"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
               >
-                <h2 className="text-xl font-bold text-white mb-2">Введите код</h2>
-                <p className="text-gray-400 mb-6">
-                  Отправили SMS на +998 {phone}
-                </p>
-                
-                <div className="flex gap-2 mb-6 justify-center">
-                  {otp.map((digit, index) => (
-                    <input
-                      key={index}
-                      id={`otp-${index}`}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => handleOtpChange(index, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Backspace' && !digit && index > 0) {
-                          const prevInput = document.getElementById(`otp-${index - 1}`);
-                          prevInput?.focus();
-                        }
-                      }}
-                      className="w-12 h-14 bg-white/5 border border-white/10 rounded-xl text-center text-white text-xl font-bold focus:outline-none focus:border-orange-500/50 transition-colors"
-                    />
-                  ))}
+                <button
+                  onClick={() => setStep('input')}
+                  className="flex items-center gap-2 text-gray-500 hover:text-gray-700"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Назад
+                </button>
+
+                <div className="text-center">
+                  <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-8 h-8 text-green-600" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-900">Введите код</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Код отправлен на {channel === 'sms' ? 'номер' : channel === 'email' ? 'почту' : 'Telegram'}
+                  </p>
+                </div>
+
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    {error}
+                  </div>
+                )}
+
+                <div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="• • • • • •"
+                    className="w-full text-center text-2xl tracking-[0.5em] border border-gray-300 rounded-xl px-4 py-4 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    autoFocus
+                  />
                 </div>
 
                 <button
-                  onClick={handleOtpSubmit}
-                  disabled={otp.some(d => !d) || loading}
-                  className="w-full py-4 bg-gradient-to-r from-orange-500 to-pink-500 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:from-orange-600 hover:to-pink-600 transition-all"
+                  onClick={handleVerifyOTP}
+                  disabled={isLoading || otp.length !== 6}
+                  className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:from-orange-600 hover:to-amber-600 transition-all"
                 >
-                  {loading ? (
+                  {isLoading ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
                     'Подтвердить'
                   )}
                 </button>
 
-                <div className="mt-4 text-center">
-                  {countdown > 0 ? (
-                    <span className="text-gray-400">
-                      Отправить повторно через {countdown} сек
-                    </span>
-                  ) : (
-                    <button className="text-orange-400 hover:text-orange-300">
-                      Отправить код повторно
-                    </button>
-                  )}
+                <div className="text-center">
+                  <button
+                    onClick={handleResendOTP}
+                    disabled={countdown > 0 || isLoading}
+                    className="text-sm text-orange-500 hover:text-orange-600 disabled:text-gray-400 disabled:cursor-not-allowed"
+                  >
+                    {countdown > 0 ? `Отправить снова через ${countdown}с` : 'Отправить код снова'}
+                  </button>
                 </div>
-
-                <button
-                  onClick={() => setStep('phone')}
-                  className="mt-4 w-full text-gray-400 hover:text-white transition-colors"
-                >
-                  ← Изменить номер
-                </button>
-              </motion.div>
-            )}
-
-            {step === 'name' && (
-              <motion.div
-                key="name"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-              >
-                <h2 className="text-xl font-bold text-white mb-2">Как вас зовут?</h2>
-                <p className="text-gray-400 mb-6">
-                  Введите ваше имя для персонализации
-                </p>
-                
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ваше имя"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-white text-lg placeholder:text-gray-500 focus:outline-none focus:border-orange-500/50 transition-colors mb-6"
-                />
-
-                <button
-                  onClick={handleNameSubmit}
-                  disabled={!name.trim() || loading}
-                  className="w-full py-4 bg-gradient-to-r from-orange-500 to-pink-500 text-white font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:from-orange-600 hover:to-pink-600 transition-all"
-                >
-                  {loading ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      Начать
-                      <ArrowRight className="w-5 h-5" />
-                    </>
-                  )}
-                </button>
               </motion.div>
             )}
           </AnimatePresence>
-        </motion.div>
+        </div>
 
-        {/* Terms */}
-        <p className="text-center text-gray-500 text-sm mt-6">
-          Продолжая, вы соглашаетесь с{' '}
-          <a href="#" className="text-orange-400 hover:underline">условиями использования</a>
-          {' '}и{' '}
-          <a href="#" className="text-orange-400 hover:underline">политикой конфиденциальности</a>
+        <p className="text-center text-gray-400 text-sm mt-6">
+          Продолжая, вы соглашаетесь с условиями использования
         </p>
       </motion.div>
     </div>
   );
 }
-
