@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   MapPin,
@@ -16,14 +17,11 @@ import {
   Minus,
   Trash2,
   Percent,
+  ShoppingBag,
 } from 'lucide-react';
-
-// Mock cart data
-const initialCart = [
-  { id: '1', name: 'Плов', price: 45000, quantity: 2 },
-  { id: '2', name: 'Шашлык', price: 55000, quantity: 1 },
-  { id: '5', name: 'Самса', price: 18000, quantity: 3 },
-];
+import { useOrderStore } from '@/store/orders';
+import { ordersAPI } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
 
 const deliveryAddress = {
   label: 'Дом',
@@ -33,7 +31,6 @@ const deliveryAddress = {
 };
 
 const restaurant = {
-  name: 'Плов Центр',
   deliveryTime: '25-35',
   deliveryFee: 10000,
   cashbackRate: 7,
@@ -46,11 +43,13 @@ function formatPrice(price: number): string {
 }
 
 export default function CheckoutPage() {
-  const [cart, setCart] = useState(initialCart);
+  const router = useRouter();
+  const { cart, merchantId, merchantName, updateQuantity, clearCart, addOrder } = useOrderStore();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [bonusToUse, setBonusToUse] = useState(0);
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const userBonus = 50000; // Mock user bonus balance
 
@@ -62,38 +61,132 @@ export default function CheckoutPage() {
   const total = subtotal + deliveryFee + serviceFee - discount - bonusUsed;
   const cashbackEarned = Math.round(subtotal * (restaurant.cashbackRate / 100));
 
-  const updateQuantity = (itemId: string, delta: number) => {
-    setCart(prev => {
-      const item = prev.find(i => i.id === itemId);
-      if (!item) return prev;
-      
-      const newQuantity = item.quantity + delta;
-      if (newQuantity <= 0) {
-        return prev.filter(i => i.id !== itemId);
-      }
-      return prev.map(i => i.id === itemId ? { ...i, quantity: newQuantity } : i);
-    });
+  const handleQuantityChange = (itemId: string, delta: number) => {
+    const item = cart.find(i => i.id === itemId);
+    if (item) {
+      updateQuantity(itemId, item.quantity + delta);
+    }
   };
 
   const handleSubmit = async () => {
+    if (cart.length === 0 || !merchantId) {
+      setError('Корзина пуста');
+      return;
+    }
+    
     setIsSubmitting(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    // Redirect to order status page
-    window.location.href = '/orders/1';
+    setError(null);
+    
+    try {
+      // Create order via API
+      const response = await ordersAPI.create({
+        merchantId,
+        items: cart.map(item => ({
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          notes: item.notes,
+        })),
+        type: 'DELIVERY',
+        deliveryAddress: {
+          street: deliveryAddress.street,
+          building: deliveryAddress.building,
+        },
+        paymentMethod: paymentMethod === 'card' ? 'CARD' : 'CASH',
+        comment,
+        bonusToUse: bonusUsed,
+      });
+      
+      // Save order to local state
+      addOrder({
+        id: response.order.id,
+        orderNumber: response.order.orderNumber,
+        status: response.order.status,
+        total,
+        items: cart,
+        merchantId,
+        merchantName: merchantName || 'Ресторан',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      
+      // Clear cart
+      clearCart();
+      
+      // Notify via socket
+      const socket = getSocket();
+      socket.emit('order:created', { orderId: response.order.id });
+      
+      // Redirect to order status page
+      router.push(`/orders/${response.order.id}`);
+    } catch (err: any) {
+      console.error('Order creation failed:', err);
+      setError(err.message || 'Не удалось оформить заказ');
+      
+      // For demo: create mock order and redirect anyway
+      const mockOrderId = `demo-${Date.now()}`;
+      const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
+      const orderData = {
+        id: mockOrderId,
+        orderNumber,
+        status: 'SUBMITTED',
+        total,
+        items: cart,
+        merchantId: merchantId || 'demo',
+        merchantName: merchantName || 'Ресторан',
+        customer: { name: 'Клиент', phone: '+998 90 123 4567' },
+        address: `${deliveryAddress.street}, ${deliveryAddress.building}`,
+        comment,
+        type: 'DELIVERY',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      addOrder(orderData);
+      clearCart();
+      
+      // Broadcast to other tabs (merchant app)
+      if (typeof window !== 'undefined') {
+        // Use localStorage for cross-tab communication
+        localStorage.setItem('food-platform-new-order', JSON.stringify(orderData));
+        // Trigger storage event
+        localStorage.removeItem('food-platform-new-order');
+        localStorage.setItem('food-platform-new-order', JSON.stringify({
+          ...orderData,
+          _timestamp: Date.now(), // Force change detection
+        }));
+      }
+      
+      router.push(`/orders/${mockOrderId}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+  
+  // Empty cart state
+  if (cart.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <ShoppingBag className="w-16 h-16 text-gray-300 mb-4" />
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">Корзина пуста</h2>
+        <p className="text-gray-500 mb-6">Добавьте что-нибудь вкусное!</p>
+        <Link href="/" className="btn-primary px-6 py-3">
+          К ресторанам
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-32">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white border-b border-gray-200">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-4">
-          <Link href="/restaurant/1" className="p-2 -ml-2 rounded-lg hover:bg-gray-100">
+          <Link href="/" className="p-2 -ml-2 rounded-lg hover:bg-gray-100">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </Link>
           <div>
             <h1 className="font-bold text-gray-900">Оформление заказа</h1>
-            <p className="text-sm text-gray-500">{restaurant.name}</p>
+            <p className="text-sm text-gray-500">{merchantName || 'Ресторан'}</p>
           </div>
         </div>
       </header>
@@ -164,14 +257,14 @@ export default function CheckoutPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => updateQuantity(item.id, -1)}
+                    onClick={() => handleQuantityChange(item.id, -1)}
                     className="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50"
                   >
                     {item.quantity === 1 ? <Trash2 className="w-4 h-4 text-red-500" /> : <Minus className="w-4 h-4" />}
                   </button>
                   <span className="w-8 text-center font-semibold text-gray-900">{item.quantity}</span>
                   <button
-                    onClick={() => updateQuantity(item.id, 1)}
+                    onClick={() => handleQuantityChange(item.id, 1)}
                     className="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50"
                   >
                     <Plus className="w-4 h-4" />

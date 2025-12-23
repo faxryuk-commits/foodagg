@@ -21,57 +21,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-
-// Mock data
-const mockOrders = [
-  {
-    id: '1',
-    orderNumber: 'ORD-2024-001234',
-    status: 'SUBMITTED',
-    createdAt: new Date(Date.now() - 2 * 60 * 1000), // 2 min ago
-    customer: { name: 'Алексей М.', phone: '+998901234567' },
-    items: [
-      { name: 'Плов', quantity: 2, price: 45000 },
-      { name: 'Самса', quantity: 3, price: 18000 },
-    ],
-    total: 144000,
-    type: 'DELIVERY',
-    address: 'ул. Навои, 15, кв. 42',
-    comment: 'Без лука, пожалуйста',
-    slaDeadline: new Date(Date.now() + 3 * 60 * 1000), // 3 min left
-  },
-  {
-    id: '2',
-    orderNumber: 'ORD-2024-001235',
-    status: 'PREPARING',
-    createdAt: new Date(Date.now() - 15 * 60 * 1000),
-    acceptedAt: new Date(Date.now() - 12 * 60 * 1000),
-    customer: { name: 'Мария К.', phone: '+998907654321' },
-    items: [
-      { name: 'Лагман', quantity: 1, price: 38000 },
-      { name: 'Чай', quantity: 2, price: 5000 },
-    ],
-    total: 48000,
-    type: 'PICKUP',
-    slaDeadline: new Date(Date.now() + 18 * 60 * 1000),
-  },
-  {
-    id: '3',
-    orderNumber: 'ORD-2024-001236',
-    status: 'READY',
-    createdAt: new Date(Date.now() - 25 * 60 * 1000),
-    acceptedAt: new Date(Date.now() - 22 * 60 * 1000),
-    readyAt: new Date(Date.now() - 2 * 60 * 1000),
-    customer: { name: 'Дмитрий С.', phone: '+998908888888' },
-    items: [
-      { name: 'Шашлык', quantity: 4, price: 55000 },
-    ],
-    total: 220000,
-    type: 'DELIVERY',
-    address: 'пр. Амира Темура, 100',
-    slaDeadline: new Date(Date.now() + 5 * 60 * 1000),
-  },
-];
+import { useMerchantOrderStore, Order } from '@/lib/orders';
 
 type OrderStatus = 'SUBMITTED' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED';
 type TabType = 'new' | 'active' | 'ready' | 'history';
@@ -98,7 +48,7 @@ function getTimeRemaining(deadline: Date): { minutes: number; seconds: number; s
 
 export default function MerchantDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('new');
-  const [orders, setOrders] = useState(mockOrders);
+  const { orders, updateOrderStatus } = useMerchantOrderStore();
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [, forceUpdate] = useState(0);
 
@@ -113,43 +63,23 @@ export default function MerchantDashboard() {
   const readyOrders = orders.filter(o => o.status === 'READY');
 
   const handleAccept = (orderId: string) => {
-    setOrders(orders.map(o => 
-      o.id === orderId 
-        ? { ...o, status: 'ACCEPTED' as OrderStatus, acceptedAt: new Date() }
-        : o
-    ));
+    updateOrderStatus(orderId, 'ACCEPTED');
   };
 
   const handleReject = (orderId: string) => {
-    setOrders(orders.map(o => 
-      o.id === orderId 
-        ? { ...o, status: 'CANCELLED' as OrderStatus }
-        : o
-    ));
+    updateOrderStatus(orderId, 'CANCELLED');
   };
 
   const handlePreparing = (orderId: string) => {
-    setOrders(orders.map(o => 
-      o.id === orderId 
-        ? { ...o, status: 'PREPARING' as OrderStatus }
-        : o
-    ));
+    updateOrderStatus(orderId, 'PREPARING');
   };
 
   const handleReady = (orderId: string) => {
-    setOrders(orders.map(o => 
-      o.id === orderId 
-        ? { ...o, status: 'READY' as OrderStatus, readyAt: new Date() }
-        : o
-    ));
+    updateOrderStatus(orderId, 'READY');
   };
 
   const handleComplete = (orderId: string) => {
-    setOrders(orders.map(o => 
-      o.id === orderId 
-        ? { ...o, status: 'COMPLETED' as OrderStatus }
-        : o
-    ));
+    updateOrderStatus(orderId, 'COMPLETED');
   };
 
   return (
@@ -327,7 +257,7 @@ export default function MerchantDashboard() {
 }
 
 interface OrderCardProps {
-  order: typeof mockOrders[0];
+  order: Order;
   onAccept?: () => void;
   onReject?: () => void;
   onPreparing?: () => void;

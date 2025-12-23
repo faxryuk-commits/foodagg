@@ -21,76 +21,7 @@ import {
   Zap,
   Activity,
 } from 'lucide-react';
-
-// Mock data for orders
-const orders = [
-  {
-    id: 'ORD-001',
-    orderNumber: '240001',
-    customer: 'Алишер Каримов',
-    phone: '+998 90 123 4567',
-    merchant: 'Sushi Time',
-    items: ['Филадельфия x2', 'Калифорния x1'],
-    total: 185000,
-    status: 'PREPARING',
-    type: 'DELIVERY',
-    address: 'ул. Навои, 45, кв. 12',
-    createdAt: '2024-12-23T19:45:00',
-    acceptedAt: '2024-12-23T19:47:00',
-    slaAcceptDeadline: '2024-12-23T19:50:00',
-    slaReadyDeadline: '2024-12-23T20:15:00',
-    estimatedTime: 30,
-  },
-  {
-    id: 'ORD-002',
-    orderNumber: '240002',
-    customer: 'Мария Иванова',
-    phone: '+998 91 234 5678',
-    merchant: 'Burger House',
-    items: ['Чизбургер x3', 'Картофель фри x2', 'Кола x3'],
-    total: 98000,
-    status: 'SUBMITTED',
-    type: 'PICKUP',
-    createdAt: '2024-12-23T19:50:00',
-    slaAcceptDeadline: '2024-12-23T19:55:00',
-    slaReadyDeadline: '2024-12-23T20:20:00',
-    estimatedTime: 25,
-  },
-  {
-    id: 'ORD-003',
-    orderNumber: '240003',
-    customer: 'Тимур Рахимов',
-    phone: '+998 93 345 6789',
-    merchant: 'Плов Центр',
-    items: ['Плов x4', 'Самса x6', 'Чай x4'],
-    total: 245000,
-    status: 'READY',
-    type: 'DELIVERY',
-    address: 'пр. Амира Темура, 88',
-    createdAt: '2024-12-23T19:20:00',
-    acceptedAt: '2024-12-23T19:22:00',
-    readyAt: '2024-12-23T19:48:00',
-    slaAcceptDeadline: '2024-12-23T19:25:00',
-    slaReadyDeadline: '2024-12-23T19:50:00',
-    estimatedTime: 30,
-  },
-  {
-    id: 'ORD-004',
-    orderNumber: '240004',
-    customer: 'Диана Ким',
-    phone: '+998 94 456 7890',
-    merchant: 'Pizza Italia',
-    items: ['Маргарита x1', 'Пепперони x1'],
-    total: 156000,
-    status: 'CANCELLED',
-    type: 'DELIVERY',
-    address: 'ул. Шота Руставели, 22',
-    createdAt: '2024-12-23T18:30:00',
-    cancelledAt: '2024-12-23T18:45:00',
-    cancelReason: 'Долгое ожидание',
-    cancelledBy: 'customer',
-  },
-];
+import { useAdminOrderStore, Order } from '@/lib/orders';
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
   SUBMITTED: { label: 'Новый', color: 'blue', icon: Clock },
@@ -103,7 +34,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
 };
 
 // SLA Widget Component
-function SLAWidget({ order }: { order: typeof orders[0] }) {
+function SLAWidget({ order }: { order: Order }) {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [slaStatus, setSlaStatus] = useState<'ok' | 'warning' | 'breached'>('ok');
   
@@ -148,9 +79,17 @@ function SLAWidget({ order }: { order: typeof orders[0] }) {
 }
 
 export default function OrdersMonitoringPage() {
+  const { orders } = useAdminOrderStore();
   const [filter, setFilter] = useState<string>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [, forceUpdate] = useState(0);
+
+  // Update timer every second
+  useEffect(() => {
+    const interval = setInterval(() => forceUpdate(n => n + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const activeOrders = orders.filter(o => 
     ['SUBMITTED', 'ACCEPTED', 'PREPARING', 'READY', 'IN_DELIVERY'].includes(o.status)
@@ -365,7 +304,7 @@ export default function OrdersMonitoringPage() {
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="flex items-center gap-2 text-sm">
                   <User className="w-4 h-4 text-gray-400" />
-                  <span className="text-white">{order.customer}</span>
+                  <span className="text-white">{order.customer.name}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <Store className="w-4 h-4 text-gray-400" />
@@ -375,7 +314,7 @@ export default function OrdersMonitoringPage() {
 
               {/* Items */}
               <div className="text-sm text-gray-400 mb-3">
-                {order.items.join(', ')}
+                {order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}
               </div>
 
               {/* Address */}

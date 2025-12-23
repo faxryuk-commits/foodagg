@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Info,
 } from 'lucide-react';
+import { useOrderStore } from '@/store/orders';
 
 // Mock data
 const restaurant = {
@@ -74,43 +75,33 @@ const restaurant = {
   ],
 };
 
-type CartItem = {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-};
-
 function formatPrice(price: number): string {
   return new Intl.NumberFormat('ru-RU').format(price) + ' сум';
 }
 
 export default function RestaurantPage() {
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const { cart, addToCart: addToStoreCart, updateQuantity } = useOrderStore();
   const [activeCategory, setActiveCategory] = useState('popular');
 
   const addToCart = (item: { id: string; name: string; price: number }) => {
-    setCart(prev => {
-      const existing = prev.find(i => i.id === item.id);
-      if (existing) {
-        return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
-      }
-      return [...prev, { ...item, quantity: 1 }];
-    });
+    addToStoreCart(
+      { menuItemId: item.id, name: item.name, price: item.price, id: item.id },
+      restaurant.id,
+      restaurant.name
+    );
   };
 
   const removeFromCart = (itemId: string) => {
-    setCart(prev => {
-      const existing = prev.find(i => i.id === itemId);
-      if (existing && existing.quantity > 1) {
-        return prev.map(i => i.id === itemId ? { ...i, quantity: i.quantity - 1 } : i);
-      }
-      return prev.filter(i => i.id !== itemId);
-    });
+    const existing = cart.find(i => i.menuItemId === itemId);
+    if (existing && existing.quantity > 1) {
+      updateQuantity(itemId, existing.quantity - 1);
+    } else {
+      updateQuantity(itemId, 0);
+    }
   };
 
   const getCartQuantity = (itemId: string): number => {
-    return cart.find(i => i.id === itemId)?.quantity || 0;
+    return cart.find(i => i.menuItemId === itemId)?.quantity || 0;
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
