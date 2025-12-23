@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   TrendingUp,
@@ -13,64 +13,120 @@ import {
   AlertTriangle,
   ArrowUpRight,
   MapPin,
+  RefreshCw,
+  CheckCircle,
 } from 'lucide-react';
+import Link from 'next/link';
 
-// Mock data
-const stats = [
-  {
-    label: 'Активные рестораны',
-    value: '247',
-    change: '+12',
-    changePercent: '+5.1%',
-    positive: true,
-    icon: Store,
-  },
-  {
-    label: 'Заказов сегодня',
-    value: '1,847',
-    change: '+234',
-    changePercent: '+14.5%',
-    positive: true,
-    icon: ShoppingBag,
-  },
-  {
-    label: 'Выручка сегодня',
-    value: '₸ 12.4M',
-    change: '+2.1M',
-    changePercent: '+20.4%',
-    positive: true,
-    icon: DollarSign,
-  },
-  {
-    label: 'Активные пользователи',
-    value: '8,924',
-    change: '+567',
-    changePercent: '+6.8%',
-    positive: true,
-    icon: Users,
-  },
-];
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
-const pendingMerchants = [
-  { id: '1', name: 'Ресторан Узбечка', city: 'Ташкент', createdAt: '2 часа назад', source: '2GIS' },
-  { id: '2', name: 'Pizza Time', city: 'Ташкент', createdAt: '3 часа назад', source: 'Yandex' },
-  { id: '3', name: 'Кафе Самарканд', city: 'Самарканд', createdAt: '5 часов назад', source: '2GIS' },
-];
+async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('food_platform_token') : null;
+  
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers || {}),
+    },
+  });
+  
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || 'Request failed');
+  }
+  return data.data || data;
+}
 
-const slaAlerts = [
-  { merchant: 'Burger House', orders: 3, avgDelay: '12 мин', status: 'critical' },
-  { merchant: 'Sushi Master', orders: 2, avgDelay: '8 мин', status: 'warning' },
-  { merchant: 'Чайхана Навруз', orders: 1, avgDelay: '5 мин', status: 'warning' },
-];
-
-const recentOrders = [
-  { id: 'ORD-001234', merchant: 'Плов Центр', amount: 145000, status: 'completed', time: '2 мин назад' },
-  { id: 'ORD-001235', merchant: 'Pizza House', amount: 89000, status: 'preparing', time: '5 мин назад' },
-  { id: 'ORD-001236', merchant: 'Sushi Master', amount: 234000, status: 'new', time: '7 мин назад' },
-  { id: 'ORD-001237', merchant: 'Burger King', amount: 67000, status: 'ready', time: '10 мин назад' },
-];
+function formatTimeAgo(date: string): string {
+  const now = new Date();
+  const past = new Date(date);
+  const diffMs = now.getTime() - past.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  
+  if (diffMins < 60) return `${diffMins} мин назад`;
+  if (diffHours < 24) return `${diffHours} час назад`;
+  return `${diffDays} дн назад`;
+}
 
 export default function AdminDashboard() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState<any>(null);
+  const [pendingMerchants, setPendingMerchants] = useState<any[]>([]);
+  const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [slaAlerts, setSlaAlerts] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setIsLoading(true);
+      const [dashboardStats, pending, orders] = await Promise.all([
+        apiRequest<any>('/api/admin/stats/dashboard'),
+        apiRequest<{ items: any[] }>('/api/admin/merchants/pending?page=1&pageSize=5'),
+        apiRequest<{ items: any[] }>('/api/admin/orders?page=1&pageSize=5'),
+      ]);
+
+      setStats(dashboardStats);
+      setPendingMerchants(pending.items || []);
+      setRecentOrders(orders.items || []);
+      
+      // TODO: Implement SLA alerts API endpoint
+      setSlaAlerts([]);
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-screen">
+        <RefreshCw className="w-8 h-8 animate-spin text-brand-400" />
+      </div>
+    );
+  }
+
+  const statsCards = [
+    {
+      label: 'Активные рестораны',
+      value: stats?.merchants?.active?.toLocaleString() || '0',
+      change: stats?.merchants?.pending || 0,
+      changePercent: stats?.merchants?.total ? `+${((stats.merchants.pending / stats.merchants.total) * 100).toFixed(1)}%` : '0%',
+      positive: true,
+      icon: Store,
+    },
+    {
+      label: 'Заказов сегодня',
+      value: stats?.orders?.today?.toLocaleString() || '0',
+      change: stats?.orders?.active || 0,
+      changePercent: stats?.orders?.total ? `+${((stats.orders.today / stats.orders.total) * 100).toFixed(1)}%` : '0%',
+      positive: true,
+      icon: ShoppingBag,
+    },
+    {
+      label: 'Всего заказов',
+      value: stats?.orders?.total?.toLocaleString() || '0',
+      change: stats?.orders?.active || 0,
+      changePercent: '0%',
+      positive: true,
+      icon: DollarSign,
+    },
+    {
+      label: 'Пользователи',
+      value: stats?.users?.total?.toLocaleString() || '0',
+      change: 0,
+      changePercent: '0%',
+      positive: true,
+      icon: Users,
+    },
+  ];
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -89,7 +145,7 @@ export default function AdminDashboard() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, index) => (
+        {statsCards.map((stat, index) => (
           <motion.div
             key={stat.label}
             initial={{ opacity: 0, y: 20 }}
@@ -132,26 +188,33 @@ export default function AdminDashboard() {
           </div>
           
           <div className="space-y-3">
-            {pendingMerchants.map((merchant) => (
-              <div key={merchant.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-800/50 hover:bg-gray-800 transition-colors">
-                <div>
-                  <p className="font-medium text-white">{merchant.name}</p>
-                  <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                    <MapPin className="w-3 h-3" />
-                    {merchant.city} • {merchant.source} • {merchant.createdAt}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <button className="btn-danger text-xs px-3 py-1.5">✕</button>
-                  <button className="btn-success text-xs px-3 py-1.5">✓</button>
-                </div>
+            {pendingMerchants.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Нет ожидающих проверки</p>
               </div>
-            ))}
+            ) : (
+              pendingMerchants.map((merchant) => (
+                <div key={merchant.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-800/50 hover:bg-gray-800 transition-colors">
+                  <div>
+                    <p className="font-medium text-white">{merchant.name}</p>
+                    <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                      <MapPin className="w-3 h-3" />
+                      {merchant.city || 'Не указан'} • {formatTimeAgo(merchant.createdAt)}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Link href={`/merchants`} className="btn-danger text-xs px-3 py-1.5">✕</Link>
+                    <Link href={`/merchants`} className="btn-success text-xs px-3 py-1.5">✓</Link>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
-          <button className="w-full mt-4 btn-ghost text-brand-400">
+          <Link href="/merchants" className="w-full mt-4 btn-ghost text-brand-400 block text-center">
             Показать все →
-          </button>
+          </Link>
         </motion.div>
 
         {/* SLA Alerts */}
@@ -170,29 +233,36 @@ export default function AdminDashboard() {
           </div>
           
           <div className="space-y-3">
-            {slaAlerts.map((alert, idx) => (
-              <div 
-                key={idx} 
-                className={`flex items-center justify-between p-3 rounded-lg ${
-                  alert.status === 'critical' ? 'bg-red-500/10 border border-red-500/20' : 'bg-yellow-500/10 border border-yellow-500/20'
-                }`}
-              >
-                <div>
-                  <p className="font-medium text-white">{alert.merchant}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {alert.orders} заказов • Среднее ожидание: {alert.avgDelay}
-                  </p>
-                </div>
-                <span className={`badge ${alert.status === 'critical' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                  {alert.status === 'critical' ? 'Критично' : 'Внимание'}
-                </span>
+            {slaAlerts.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Нет SLA алертов</p>
               </div>
-            ))}
+            ) : (
+              slaAlerts.map((alert, idx) => (
+                <div 
+                  key={idx} 
+                  className={`flex items-center justify-between p-3 rounded-lg ${
+                    alert.status === 'critical' ? 'bg-red-500/10 border border-red-500/20' : 'bg-yellow-500/10 border border-yellow-500/20'
+                  }`}
+                >
+                  <div>
+                    <p className="font-medium text-white">{alert.merchant}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {alert.orders} заказов • Среднее ожидание: {alert.avgDelay}
+                    </p>
+                  </div>
+                  <span className={`badge ${alert.status === 'critical' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                    {alert.status === 'critical' ? 'Критично' : 'Внимание'}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
 
-          <button className="w-full mt-4 btn-ghost text-brand-400">
+          <Link href="/orders" className="w-full mt-4 btn-ghost text-brand-400 block text-center">
             Все алерты →
-          </button>
+          </Link>
         </motion.div>
 
         {/* Recent Orders */}
@@ -210,34 +280,41 @@ export default function AdminDashboard() {
           </div>
           
           <div className="space-y-3">
-            {recentOrders.map((order) => (
-              <div key={order.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-800/50">
-                <div>
-                  <p className="font-mono text-sm text-white">{order.id}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {order.merchant} • {order.time}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-medium text-white">{(order.amount / 1000).toFixed(0)}K сум</p>
-                  <span className={`badge text-xs ${
-                    order.status === 'completed' ? 'bg-green-500/10 text-green-400' :
-                    order.status === 'preparing' ? 'bg-yellow-500/10 text-yellow-400' :
-                    order.status === 'ready' ? 'bg-blue-500/10 text-blue-400' :
-                    'bg-purple-500/10 text-purple-400'
-                  }`}>
-                    {order.status === 'completed' ? 'Завершён' :
-                     order.status === 'preparing' ? 'Готовится' :
-                     order.status === 'ready' ? 'Готов' : 'Новый'}
-                  </span>
-                </div>
+            {recentOrders.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <ShoppingBag className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Нет заказов</p>
               </div>
-            ))}
+            ) : (
+              recentOrders.map((order) => (
+                <div key={order.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-800/50">
+                  <div>
+                    <p className="font-mono text-sm text-white">{order.orderNumber || order.id}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {order.merchant?.name || 'Неизвестно'} • {formatTimeAgo(order.createdAt)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-medium text-white">{order.total ? (order.total / 1000).toFixed(0) + 'K' : '0'} сум</p>
+                    <span className={`badge text-xs ${
+                      order.status === 'COMPLETED' ? 'bg-green-500/10 text-green-400' :
+                      order.status === 'PREPARING' ? 'bg-yellow-500/10 text-yellow-400' :
+                      order.status === 'READY' ? 'bg-blue-500/10 text-blue-400' :
+                      'bg-purple-500/10 text-purple-400'
+                    }`}>
+                      {order.status === 'COMPLETED' ? 'Завершён' :
+                       order.status === 'PREPARING' ? 'Готовится' :
+                       order.status === 'READY' ? 'Готов' : 'Новый'}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
-          <button className="w-full mt-4 btn-ghost text-brand-400">
+          <Link href="/orders" className="w-full mt-4 btn-ghost text-brand-400 block text-center">
             Все заказы →
-          </button>
+          </Link>
         </motion.div>
       </div>
 

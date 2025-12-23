@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Users,
@@ -17,65 +17,53 @@ import {
   Gift,
 } from 'lucide-react';
 
-const users = [
-  {
-    id: '1',
-    name: 'Алишер Каримов',
-    phone: '+998 90 123 4567',
-    email: 'alisher@example.com',
-    status: 'active',
-    totalOrders: 47,
-    totalSpent: 2450000,
-    bonusBalance: 15000,
-    createdAt: '2024-08-15',
-    lastOrderAt: '2024-12-22',
-  },
-  {
-    id: '2',
-    name: 'Мария Иванова',
-    phone: '+998 91 234 5678',
-    email: 'maria@example.com',
-    status: 'active',
-    totalOrders: 23,
-    totalSpent: 890000,
-    bonusBalance: 5600,
-    createdAt: '2024-10-01',
-    lastOrderAt: '2024-12-23',
-  },
-  {
-    id: '3',
-    name: 'Тимур Рахимов',
-    phone: '+998 93 345 6789',
-    email: 'timur@example.com',
-    status: 'blocked',
-    totalOrders: 3,
-    totalSpent: 120000,
-    bonusBalance: 0,
-    createdAt: '2024-11-20',
-    lastOrderAt: '2024-11-25',
-    blockReason: 'Мошенничество',
-  },
-  {
-    id: '4',
-    name: 'Диана Ким',
-    phone: '+998 94 456 7890',
-    email: 'diana@example.com',
-    status: 'active',
-    totalOrders: 89,
-    totalSpent: 4560000,
-    bonusBalance: 34500,
-    createdAt: '2024-03-10',
-    lastOrderAt: '2024-12-23',
-  },
-];
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('food_platform_token') : null;
+  
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers || {}),
+    },
+  });
+  
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || 'Request failed');
+  }
+  return data.data || data;
+}
 
 export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'blocked'>('all');
+  const [users, setUsers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      setIsLoading(true);
+      const data = await apiRequest<{ items: any[] }>('/api/users?page=1&pageSize=100');
+      setUsers(data.items || []);
+    } catch (error) {
+      console.error('Failed to load users:', error);
+      setUsers([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const filteredUsers = users.filter(u => {
     if (filter !== 'all' && u.status !== filter) return false;
-    if (searchQuery && !u.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (searchQuery && !(u.name || '').toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
 
@@ -83,7 +71,7 @@ export default function UsersPage() {
     total: users.length,
     active: users.filter(u => u.status === 'active').length,
     blocked: users.filter(u => u.status === 'blocked').length,
-    totalRevenue: users.reduce((acc, u) => acc + u.totalSpent, 0),
+    totalRevenue: users.reduce((acc, u) => acc + (u.totalSpent || 0), 0),
   };
 
   return (

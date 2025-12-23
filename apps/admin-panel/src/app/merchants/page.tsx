@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Store,
@@ -24,80 +24,26 @@ import {
   MessageSquare,
 } from 'lucide-react';
 
-// Mock data
-const merchants = [
-  {
-    id: '1',
-    name: 'Плов Центр Ахмад',
-    slug: 'plov-centr-ahmad',
-    logo: null,
-    status: 'PENDING',
-    address: 'ул. Навои, 45, Ташкент',
-    phone: '+998 71 123 4567',
-    email: 'ahmad@plovcentr.uz',
-    owner: 'Ахмад Каримов',
-    category: 'Узбекская кухня',
-    rating: 0,
-    reviewCount: 0,
-    orderCount: 0,
-    createdAt: '2024-12-22T10:00:00',
-    documents: ['license.pdf', 'certificate.pdf'],
-  },
-  {
-    id: '2',
-    name: 'Burger House',
-    slug: 'burger-house',
-    logo: null,
-    status: 'PENDING',
-    address: 'пр. Амира Темура, 88',
-    phone: '+998 90 111 2233',
-    email: 'info@burgerhouse.uz',
-    owner: 'Тимур Алиев',
-    category: 'Фастфуд',
-    rating: 0,
-    reviewCount: 0,
-    orderCount: 0,
-    createdAt: '2024-12-23T08:30:00',
-    documents: ['license.pdf'],
-  },
-  {
-    id: '3',
-    name: 'Sushi Time',
-    slug: 'sushi-time',
-    logo: null,
-    status: 'ACTIVE',
-    address: 'ул. Мирабад, 22',
-    phone: '+998 71 234 5678',
-    email: 'order@sushitime.uz',
-    owner: 'Алишер Рахимов',
-    category: 'Японская кухня',
-    rating: 4.7,
-    reviewCount: 156,
-    orderCount: 892,
-    createdAt: '2024-11-15T12:00:00',
-    approvedAt: '2024-11-16T09:00:00',
-    documents: [],
-  },
-  {
-    id: '4',
-    name: 'Pizza Italia',
-    slug: 'pizza-italia',
-    logo: null,
-    status: 'SUSPENDED',
-    address: 'ул. Шота Руставели, 15',
-    phone: '+998 71 345 6789',
-    email: 'hello@pizzaitalia.uz',
-    owner: 'Марко Росси',
-    category: 'Итальянская кухня',
-    rating: 4.2,
-    reviewCount: 89,
-    orderCount: 445,
-    createdAt: '2024-10-01T10:00:00',
-    suspendedAt: '2024-12-20T14:00:00',
-    suspendReason: 'Жалобы на качество',
-    documents: [],
-  },
-];
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('food_platform_token') : null;
+  
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers || {}),
+    },
+  });
+  
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || 'Request failed');
+  }
+  return data.data || data;
+}
 
 const statusConfig = {
   PENDING: { label: 'На модерации', color: 'amber', icon: Clock },
@@ -109,12 +55,31 @@ const statusConfig = {
 export default function MerchantsPage() {
   const [filter, setFilter] = useState<'all' | 'PENDING' | 'ACTIVE' | 'SUSPENDED'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedMerchant, setSelectedMerchant] = useState<typeof merchants[0] | null>(null);
+  const [selectedMerchant, setSelectedMerchant] = useState<any | null>(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [merchants, setMerchants] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadMerchants();
+  }, [filter]);
+
+  const loadMerchants = async () => {
+    try {
+      setIsLoading(true);
+      const status = filter !== 'all' ? filter : undefined;
+      const data = await apiRequest<{ items: any[]; total: number }>(`/api/admin/merchants?page=1&pageSize=100${status ? `&status=${status}` : ''}`);
+      setMerchants(data.items || []);
+    } catch (error) {
+      console.error('Failed to load merchants:', error);
+      setMerchants([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const filteredMerchants = merchants.filter(m => {
-    if (filter !== 'all' && m.status !== filter) return false;
     if (searchQuery && !m.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
@@ -150,7 +115,7 @@ export default function MerchantsPage() {
             </div>
             <span className="text-gray-400 text-sm">Всего</span>
           </div>
-          <div className="text-3xl font-bold">{merchants.length}</div>
+          <div className="text-3xl font-bold">{isLoading ? '...' : merchants.length}</div>
         </motion.div>
 
         <motion.div
