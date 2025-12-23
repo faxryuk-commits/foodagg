@@ -1,0 +1,642 @@
+// ===========================================
+// Prisma Schema - Food Delivery Platform
+// ===========================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================
+// ENUMS
+// ===========================================
+
+enum UserRole {
+  USER
+  MERCHANT_OWNER
+  MERCHANT_STAFF
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum MerchantStatus {
+  PENDING       // Ожидает проверки
+  ACTIVE        // Активен
+  SUSPENDED     // Приостановлен
+  CLOSED        // Закрыт
+}
+
+enum OrderStatus {
+  SUBMITTED     // Заказ создан
+  ACCEPTED      // Принят рестораном
+  PREPARING     // Готовится
+  READY         // Готов к выдаче/доставке
+  IN_DELIVERY   // В доставке
+  COMPLETED     // Завершён
+  CANCELLED     // Отменён
+}
+
+enum OrderType {
+  DELIVERY      // Доставка
+  PICKUP        // Самовывоз
+  DINE_IN       // В заведении
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  CASH
+  BONUS
+  MIXED
+}
+
+enum ScrapingSourceType {
+  TWOGIS        // 2GIS
+  YANDEX_MAPS   // Яндекс Карты
+  GOOGLE_MAPS   // Google Maps
+  TRIPADVISOR   // TripAdvisor
+  CUSTOM        // Собственный источник
+}
+
+enum ScrapingStatus {
+  ACTIVE
+  PAUSED
+  ERROR
+}
+
+enum ConflictStatus {
+  PENDING       // Ожидает проверки
+  RESOLVED      // Разрешён
+  IGNORED       // Игнорирован
+}
+
+// ===========================================
+// USER & AUTH
+// ===========================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  phone         String    @unique
+  passwordHash  String?
+  name          String?
+  avatar        String?
+  role          UserRole  @default(USER)
+  
+  // Бонусы и лояльность
+  bonusBalance  Int       @default(0)
+  totalOrders   Int       @default(0)
+  totalSpent    Float     @default(0)
+  
+  // Настройки
+  preferences   Json?     // { pushEnabled, emailEnabled, language, etc }
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Relations
+  addresses     Address[]
+  orders        Order[]
+  reviews       Review[]
+  bonusHistory  BonusTransaction[]
+  sessions      Session[]
+  merchantStaff MerchantStaff[]
+  
+  @@index([phone])
+  @@index([email])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  
+  @@index([userId])
+  @@index([token])
+}
+
+model Address {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  label       String?  // "Дом", "Работа", etc
+  street      String
+  building    String?
+  apartment   String?
+  entrance    String?
+  floor       String?
+  city        String
+  country     String   @default("Uzbekistan")
+  
+  lat         Float
+  lng         Float
+  
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  orders      Order[]
+  
+  @@index([userId])
+}
+
+// ===========================================
+// MERCHANT (Рестораны)
+// ===========================================
+
+model Merchant {
+  id              String         @id @default(cuid())
+  
+  // Основная информация
+  name            String
+  slug            String         @unique
+  description     String?
+  
+  // Контакты
+  phone           String
+  email           String?
+  website         String?
+  
+  // Медиа
+  logo            String?
+  coverImage      String?
+  images          String[]       // Галерея
+  
+  // Адрес
+  address         String
+  city            String
+  country         String         @default("Uzbekistan")
+  lat             Float
+  lng             Float
+  
+  // Настройки
+  status          MerchantStatus @default(PENDING)
+  isVerified      Boolean        @default(false)
+  
+  // Время работы { mon: { open: "09:00", close: "22:00" }, ... }
+  workingHours    Json?
+  
+  // Busy mode
+  isBusy          Boolean        @default(false)
+  busyUntil       DateTime?
+  busyMinutes     Int            @default(0)
+  busyReason      String?
+  
+  // SLA настройки (в минутах)
+  slaAcceptTime   Int            @default(5)   // Время на принятие заказа
+  slaReadyTime    Int            @default(30)  // Время на приготовление
+  
+  // Доставка
+  deliveryEnabled Boolean        @default(true)
+  pickupEnabled   Boolean        @default(true)
+  dineInEnabled   Boolean        @default(false)
+  minOrderAmount  Float          @default(0)
+  deliveryFee     Float          @default(0)
+  deliveryRadius  Float          @default(5)   // км
+  
+  // Рейтинг
+  rating          Float          @default(0)
+  reviewCount     Int            @default(0)
+  orderCount      Int            @default(0)
+  
+  // Экономика
+  commissionRate  Float          @default(15)  // % комиссии платформы
+  cashbackRate    Float          @default(5)   // % кешбэка пользователю
+  
+  // Категории и теги
+  categories      String[]       // ["restaurant", "cafe", "fast_food"]
+  cuisines        String[]       // ["uzbek", "european", "asian"]
+  tags            String[]       // ["halal", "vegan", "24h"]
+  
+  // Источник данных
+  sourceType      ScrapingSourceType?
+  sourceId        String?        // ID в источнике (2GIS, Yandex, etc)
+  sourceUrl       String?        // Ссылка на источник
+  
+  // Timestamps
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  approvedAt      DateTime?
+  
+  // Relations
+  menuCategories  MenuCategory[]
+  menuItems       MenuItem[]
+  orders          Order[]
+  reviews         Review[]
+  staff           MerchantStaff[]
+  scrapingResults ScrapingResult[]
+  slaMetrics      SLAMetric[]
+  
+  @@index([slug])
+  @@index([status])
+  @@index([city])
+  @@index([lat, lng])
+}
+
+model MerchantStaff {
+  id          String   @id @default(cuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  role        String   @default("staff") // owner, manager, staff
+  permissions Json?    // { canAcceptOrders, canEditMenu, etc }
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([merchantId, userId])
+  @@index([merchantId])
+  @@index([userId])
+}
+
+// ===========================================
+// MENU
+// ===========================================
+
+model MenuCategory {
+  id          String     @id @default(cuid())
+  merchantId  String
+  merchant    Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  
+  name        String
+  description String?
+  image       String?
+  position    Int        @default(0)
+  isActive    Boolean    @default(true)
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  
+  items       MenuItem[]
+  
+  @@index([merchantId])
+}
+
+model MenuItem {
+  id            String        @id @default(cuid())
+  merchantId    String
+  merchant      Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  categoryId    String?
+  category      MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  
+  name          String
+  description   String?
+  image         String?
+  
+  price         Float
+  discountPrice Float?
+  
+  // Опции и модификаторы
+  options       Json?         // [{ name: "Размер", values: ["S", "M", "L"], prices: [0, 10, 20] }]
+  
+  // Характеристики
+  weight        String?       // "350г"
+  calories      Int?
+  ingredients   String[]
+  allergens     String[]
+  
+  // Теги
+  isPopular     Boolean       @default(false)
+  isNew         Boolean       @default(false)
+  isSpicy       Boolean       @default(false)
+  isVegetarian  Boolean       @default(false)
+  isVegan       Boolean       @default(false)
+  isHalal       Boolean       @default(true)
+  
+  // Доступность
+  isAvailable   Boolean       @default(true)
+  position      Int           @default(0)
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  orderItems    OrderItem[]
+  
+  @@index([merchantId])
+  @@index([categoryId])
+  @@index([isAvailable])
+}
+
+// ===========================================
+// ORDERS
+// ===========================================
+
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique // ORD-2024-001234
+  
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  merchantId      String
+  merchant        Merchant      @relation(fields: [merchantId], references: [id])
+  addressId       String?
+  address         Address?      @relation(fields: [addressId], references: [id])
+  
+  // Тип заказа
+  type            OrderType     @default(DELIVERY)
+  status          OrderStatus   @default(SUBMITTED)
+  
+  // Суммы
+  subtotal        Float         // Сумма товаров
+  deliveryFee     Float         @default(0)
+  serviceFee      Float         @default(0)
+  discount        Float         @default(0)
+  bonusUsed       Float         @default(0)
+  bonusEarned     Float         @default(0)
+  total           Float         // Итого к оплате
+  
+  // Оплата
+  paymentMethod   PaymentMethod @default(CARD)
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentId       String?       // ID транзакции
+  
+  // Адрес доставки (snapshot)
+  deliveryAddress Json?         // { street, building, lat, lng, etc }
+  
+  // Время
+  estimatedTime   Int?          // Минуты
+  scheduledAt     DateTime?     // Для предзаказов
+  
+  // SLA tracking
+  acceptedAt      DateTime?
+  preparingAt     DateTime?
+  readyAt         DateTime?
+  deliveredAt     DateTime?
+  cancelledAt     DateTime?
+  
+  slaAcceptDeadline  DateTime?
+  slaReadyDeadline   DateTime?
+  slaBreached        Boolean    @default(false)
+  
+  // Причина отмены
+  cancelReason    String?
+  cancelledBy     String?       // user, merchant, admin, system
+  
+  // Комментарии
+  comment         String?
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  // Relations
+  items           OrderItem[]
+  timeline        OrderTimeline[]
+  messages        OrderMessage[]
+  review          Review?
+  
+  @@index([userId])
+  @@index([merchantId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([orderNumber])
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId  String
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id])
+  
+  name        String   // Snapshot название
+  price       Float    // Snapshot цена
+  quantity    Int
+  options     Json?    // Выбранные опции
+  subtotal    Float
+  comment     String?
+  
+  @@index([orderId])
+}
+
+model OrderTimeline {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  status    OrderStatus
+  note      String?
+  actor     String?     // user, merchant, system, admin
+  
+  createdAt DateTime    @default(now())
+  
+  @@index([orderId])
+}
+
+model OrderMessage {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  senderId  String
+  senderType String   // user, merchant, system
+  message   String
+  
+  createdAt DateTime @default(now())
+  readAt    DateTime?
+  
+  @@index([orderId])
+}
+
+// ===========================================
+// REVIEWS
+// ===========================================
+
+model Review {
+  id          String   @id @default(cuid())
+  orderId     String   @unique
+  order       Order    @relation(fields: [orderId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  
+  rating      Int      // 1-5
+  comment     String?
+  tags        String[] // ["fast", "tasty", "good_portions"]
+  
+  // Ответ ресторана
+  reply       String?
+  repliedAt   DateTime?
+  
+  isVisible   Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([merchantId])
+  @@index([userId])
+}
+
+// ===========================================
+// BONUSES
+// ===========================================
+
+model BonusTransaction {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  amount      Int      // Положительный = начисление, отрицательный = списание
+  balance     Int      // Баланс после операции
+  type        String   // earned, spent, expired, refund, promo
+  description String?
+  orderId     String?
+  
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+  
+  @@index([userId])
+}
+
+// ===========================================
+// DATA SCRAPING
+// ===========================================
+
+model ScrapingSource {
+  id          String             @id @default(cuid())
+  
+  name        String             // "2GIS Tashkent", "Yandex Maps UZ"
+  type        ScrapingSourceType
+  
+  // Конфигурация
+  config      Json               // { region, query, maxResults, etc }
+  
+  // Apify
+  apifyActorId String?
+  apifyRunId   String?
+  
+  // Статус
+  status      ScrapingStatus     @default(ACTIVE)
+  lastRunAt   DateTime?
+  lastError   String?
+  
+  // Статистика
+  totalItems  Int                @default(0)
+  newItems    Int                @default(0)
+  conflicts   Int                @default(0)
+  
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  
+  results     ScrapingResult[]
+  
+  @@index([type])
+  @@index([status])
+}
+
+model ScrapingResult {
+  id              String         @id @default(cuid())
+  sourceId        String
+  source          ScrapingSource @relation(fields: [sourceId], references: [id])
+  merchantId      String?
+  merchant        Merchant?      @relation(fields: [merchantId], references: [id])
+  
+  // Сырые данные
+  rawData         Json
+  
+  // Нормализованные данные
+  normalizedData  Json?          // { name, address, phone, rating, etc }
+  
+  // Матчинг
+  matchedMerchantId String?
+  matchScore        Float?
+  
+  // Конфликт
+  conflictStatus  ConflictStatus @default(PENDING)
+  conflictFields  String[]       // ["phone", "address", "name"]
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  
+  createdAt       DateTime       @default(now())
+  
+  @@index([sourceId])
+  @@index([merchantId])
+  @@index([conflictStatus])
+}
+
+// ===========================================
+// SLA METRICS
+// ===========================================
+
+model SLAMetric {
+  id              String   @id @default(cuid())
+  merchantId      String
+  merchant        Merchant @relation(fields: [merchantId], references: [id])
+  
+  date            DateTime @db.Date
+  
+  // Метрики
+  totalOrders     Int      @default(0)
+  acceptedOnTime  Int      @default(0)
+  readyOnTime     Int      @default(0)
+  cancelled       Int      @default(0)
+  slaBreached     Int      @default(0)
+  
+  // Среднее время (секунды)
+  avgAcceptTime   Int?
+  avgReadyTime    Int?
+  
+  // Рейтинг дня
+  avgRating       Float?
+  reviewCount     Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  
+  @@unique([merchantId, date])
+  @@index([merchantId])
+  @@index([date])
+}
+
+// ===========================================
+// ADMIN ACTIONS
+// ===========================================
+
+model AdminAction {
+  id          String   @id @default(cuid())
+  adminId     String
+  
+  action      String   // approve_merchant, suspend_merchant, resolve_conflict, etc
+  targetType  String   // merchant, order, user, scraping
+  targetId    String
+  
+  reason      String?
+  metadata    Json?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([adminId])
+  @@index([targetType, targetId])
+}
+
+// ===========================================
+// SYSTEM SETTINGS
+// ===========================================
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+

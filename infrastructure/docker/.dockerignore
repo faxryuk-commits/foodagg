@@ -1,0 +1,36 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+.next
+dist
+build
+out
+
+# Development
+.git
+.gitignore
+*.md
+*.log
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Testing
+coverage
+.nyc_output
+
+# Misc
+.DS_Store
+*.tsbuildinfo
+.turbo
+

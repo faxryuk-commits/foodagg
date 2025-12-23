@@ -1,0 +1,41 @@
+{
+  "name": "food-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Food Delivery Platform with automated data collection and real-time order tracking",
+  "author": "Platform OS Team",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:api": "turbo run dev --filter=@food-platform/api",
+    "dev:user": "turbo run dev --filter=@food-platform/user-app",
+    "dev:merchant": "turbo run dev --filter=@food-platform/merchant-app",
+    "dev:admin": "turbo run dev --filter=@food-platform/admin-panel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "db:generate": "turbo run db:generate --filter=@food-platform/database",
+    "db:migrate": "turbo run db:migrate --filter=@food-platform/database",
+    "db:push": "turbo run db:push --filter=@food-platform/database",
+    "db:seed": "turbo run db:seed --filter=@food-platform/database",
+    "db:studio": "turbo run db:studio --filter=@food-platform/database",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "eslint": "^8.55.0",
+    "prettier": "^3.1.0",
+    "turbo": "^1.11.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@8.10.0"
+}
+

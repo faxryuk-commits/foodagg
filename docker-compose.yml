@@ -1,0 +1,177 @@
+version: '3.8'
+
+services:
+  # ===========================================
+  # Database
+  # ===========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: food-platform-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: food_platform
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
+  # Redis (Cache & Queue)
+  # ===========================================
+  redis:
+    image: redis:7-alpine
+    container_name: food-platform-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
+  # Backend API
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: ./infrastructure/docker/api.Dockerfile
+    container_name: food-platform-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/food_platform
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key}
+      API_PORT: 4000
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # User App (Next.js)
+  # ===========================================
+  user-app:
+    build:
+      context: .
+      dockerfile: ./infrastructure/docker/user-app.Dockerfile
+    container_name: food-platform-user
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://api:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  # ===========================================
+  # Merchant App (Next.js)
+  # ===========================================
+  merchant-app:
+    build:
+      context: .
+      dockerfile: ./infrastructure/docker/merchant-app.Dockerfile
+    container_name: food-platform-merchant
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://api:4000
+    ports:
+      - "3001:3001"
+    depends_on:
+      - api
+
+  # ===========================================
+  # Admin Panel (Next.js)
+  # ===========================================
+  admin-panel:
+    build:
+      context: .
+      dockerfile: ./infrastructure/docker/admin-panel.Dockerfile
+    container_name: food-platform-admin
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://api:4000
+    ports:
+      - "3002:3002"
+    depends_on:
+      - api
+
+  # ===========================================
+  # n8n (Workflow Automation)
+  # ===========================================
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: food-platform-n8n
+    restart: unless-stopped
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin123}
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Asia/Tashkent
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "5678:5678"
+    depends_on:
+      - postgres
+      - redis
+
+  # ===========================================
+  # MinIO (S3-compatible Object Storage)
+  # ===========================================
+  minio:
+    image: minio/minio:latest
+    container_name: food-platform-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:
+  minio_data:
+
+networks:
+  default:
+    name: food-platform-network
+
