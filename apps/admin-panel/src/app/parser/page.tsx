@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Globe,
@@ -167,15 +167,112 @@ const sourceColors: Record<string, string> = {
   'google': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
 };
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('food_platform_token') : null;
+  
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers || {}),
+    },
+  });
+  
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || 'Request failed');
+  }
+  return data.data || data;
+}
+
 export default function ParserPage() {
   const [activeTab, setActiveTab] = useState<'sources' | 'results' | 'conflicts'>('sources');
   const [showAddSource, setShowAddSource] = useState(false);
   const [selectedConflict, setSelectedConflict] = useState<string | null>(null);
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    type: 'yandex' as '2gis' | 'yandex' | 'google',
+    name: '',
+    city: '',
+    category: '',
+    radius: 30,
+    apifyActorId: '',
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  
+  // Sources state
+  const [sources, setSources] = useState<any[]>([]);
+  const [isLoadingSources, setIsLoadingSources] = useState(true);
+
+  // Load sources on mount
+  useEffect(() => {
+    loadSources();
+  }, []);
+
+  const loadSources = async () => {
+    try {
+      setIsLoadingSources(true);
+      const data = await apiRequest<any[]>('/api/admin/scraping/sources');
+      setSources(data || []);
+    } catch (error: any) {
+      console.error('Failed to load sources:', error);
+      // Fallback to mock data if API fails
+      setSources(scrapingSources as any[]);
+    } finally {
+      setIsLoadingSources(false);
+    }
+  };
+
+  const handleCreateSource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const source = await apiRequest<any>('/api/admin/scraping/sources', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: formData.name || `${formData.type === '2gis' ? '2GIS' : formData.type === 'yandex' ? 'Yandex Maps' : 'Google Maps'} ${formData.city || ''}`,
+          type: formData.type,
+          config: {
+            city: formData.city,
+            category: formData.category,
+            radius: formData.radius,
+          },
+          apifyActorId: formData.apifyActorId,
+        }),
+      });
+
+      // Reset form
+      setFormData({
+        type: 'yandex',
+        name: '',
+        city: '',
+        category: '',
+        radius: 30,
+        apifyActorId: '',
+      });
+      setShowAddSource(false);
+      
+      // Reload sources
+      await loadSources();
+    } catch (error: any) {
+      console.error('Failed to create source:', error);
+      setSubmitError(error.message || 'Не удалось создать источник');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const stats = {
-    totalSources: scrapingSources.length,
-    activeSources: scrapingSources.filter(s => s.status === 'active').length,
-    totalScraped: scrapingSources.reduce((acc, s) => acc + s.totalScraped, 0),
+    totalSources: sources.length,
+    activeSources: sources.filter((s: any) => s.isActive).length,
+    totalScraped: sources.reduce((acc: number, s: any) => acc + (s._count?.results || 0), 0),
     pendingConflicts: conflicts.length,
   };
 
@@ -192,7 +289,18 @@ export default function ParserPage() {
           </p>
         </div>
         <button
-          onClick={() => setShowAddSource(true)}
+          onClick={() => {
+            setFormData({
+              type: 'yandex',
+              name: 'Yandex maps',
+              city: 'Tashkent',
+              category: 'рестораны, кафе, чайхана',
+              radius: 30,
+              apifyActorId: '',
+            });
+            setShowAddSource(true);
+            setSubmitError(null);
+          }}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-lg hover:from-emerald-500 hover:to-emerald-400 transition-all"
         >
           <Plus className="w-5 h-5" />
@@ -307,7 +415,19 @@ export default function ParserPage() {
             exit={{ opacity: 0, y: -10 }}
             className="space-y-4"
           >
-            {scrapingSources.map((source, index) => (
+            {isLoadingSources ? (
+              <div className="text-center py-12 text-gray-400">
+                <RefreshCw className="w-8 h-8 mx-auto mb-4 animate-spin" />
+                <div>Загрузка источников...</div>
+              </div>
+            ) : sources.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <Globe className="w-12 h-12 mx-auto mb-4" />
+                <div className="text-xl font-medium text-white mb-2">Нет источников</div>
+                <div>Добавьте первый источник для начала парсинга</div>
+              </div>
+            ) : (
+              sources.map((source: any, index: number) => (
               <motion.div
                 key={source.id}
                 initial={{ opacity: 0, x: -20 }}
@@ -325,12 +445,12 @@ export default function ParserPage() {
                       <div className="flex items-center gap-3 text-sm text-gray-400 mt-1">
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
-                          {source.config.city}
+                          {(source.config as any)?.city || 'Не указан'}
                         </span>
                         <span>•</span>
-                        <span>{source.config.category}</span>
+                        <span>{(source.config as any)?.category || 'Не указана'}</span>
                         <span>•</span>
-                        <span>Радиус: {source.config.radius} км</span>
+                        <span>Радиус: {(source.config as any)?.radius || 0} км</span>
                       </div>
                     </div>
                   </div>
@@ -339,31 +459,23 @@ export default function ParserPage() {
                     {/* Stats */}
                     <div className="flex gap-6 text-center">
                       <div>
-                        <div className="text-xl font-bold">{source.totalScraped}</div>
+                        <div className="text-xl font-bold">{source._count?.results || 0}</div>
                         <div className="text-xs text-gray-400">собрано</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold text-emerald-400">+{source.newFound}</div>
-                        <div className="text-xs text-gray-400">новых</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold text-amber-400">{source.conflicts}</div>
-                        <div className="text-xs text-gray-400">конфликт</div>
                       </div>
                     </div>
 
                     {/* Status & Actions */}
                     <div className="flex items-center gap-2">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        source.status === 'active'
+                        source.isActive
                           ? 'bg-emerald-500/20 text-emerald-400'
                           : 'bg-gray-500/20 text-gray-400'
                       }`}>
-                        {source.status === 'active' ? 'Активен' : 'Пауза'}
+                        {source.isActive ? 'Активен' : 'Пауза'}
                       </span>
                       
                       <button className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-                        {source.status === 'active' ? (
+                        {source.isActive ? (
                           <Pause className="w-4 h-4 text-gray-400" />
                         ) : (
                           <Play className="w-4 h-4 text-emerald-400" />
@@ -382,24 +494,32 @@ export default function ParserPage() {
                 {/* Schedule Info */}
                 <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-sm">
                   <div className="flex items-center gap-4 text-gray-400">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" />
-                      Последний запуск: {new Date(source.lastRun).toLocaleString('ru')}
-                    </span>
-                    {source.nextRun && (
+                    {source.lastRunAt && (
                       <span className="flex items-center gap-1">
-                        <ChevronRight className="w-4 h-4" />
-                        Следующий: {new Date(source.nextRun).toLocaleString('ru')}
+                        <Clock className="w-4 h-4" />
+                        Последний запуск: {new Date(source.lastRunAt).toLocaleString('ru')}
                       </span>
                     )}
                   </div>
-                  <button className="text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                  <button 
+                    onClick={async () => {
+                      try {
+                        await apiRequest(`/api/admin/scraping/sources/${source.id}/run`, { method: 'POST' });
+                        await loadSources();
+                      } catch (error: any) {
+                        console.error('Failed to run scraping:', error);
+                        alert(error.message || 'Не удалось запустить парсинг');
+                      }
+                    }}
+                    className="text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  >
                     Запустить сейчас
                     <Play className="w-4 h-4" />
                   </button>
                 </div>
               </motion.div>
-            ))}
+              ))
+            )}
           </motion.div>
         )}
 
@@ -638,7 +758,13 @@ export default function ParserPage() {
             >
               <h2 className="text-xl font-bold mb-6">Добавить источник</h2>
               
-              <div className="space-y-4">
+              {submitError && (
+                <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm">
+                  {submitError}
+                </div>
+              )}
+              
+              <form onSubmit={handleCreateSource} className="space-y-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Тип источника</label>
                   <div className="grid grid-cols-3 gap-2">
@@ -649,7 +775,20 @@ export default function ParserPage() {
                     ].map((type) => (
                       <button
                         key={type.id}
-                        className={`p-4 rounded-lg border border-white/10 hover:border-white/30 transition-colors text-center ${sourceColors[type.id]}`}
+                        type="button"
+                        onClick={() => {
+                          const newType = type.id as any;
+                          setFormData({ 
+                            ...formData, 
+                            type: newType,
+                            name: formData.name || `${type.label} ${formData.city || ''}`.trim(),
+                          });
+                        }}
+                        className={`p-4 rounded-lg border transition-colors text-center ${
+                          formData.type === type.id
+                            ? `${sourceColors[type.id]} border-white/30`
+                            : 'border-white/10 hover:border-white/30'
+                        }`}
                       >
                         <div className="text-2xl mb-1">{type.icon}</div>
                         <div className="text-sm">{type.label}</div>
@@ -662,6 +801,8 @@ export default function ParserPage() {
                   <label className="block text-sm text-gray-400 mb-2">Название</label>
                   <input
                     type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="2GIS Ташкент"
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder:text-gray-500 focus:outline-none focus:border-white/20"
                   />
@@ -671,7 +812,22 @@ export default function ParserPage() {
                   <label className="block text-sm text-gray-400 mb-2">Город</label>
                   <input
                     type="text"
+                    value={formData.city}
+                    onChange={(e) => {
+                      const city = e.target.value;
+                      const typeLabels: Record<string, string> = {
+                        '2gis': '2GIS',
+                        'yandex': 'Yandex Maps',
+                        'google': 'Google Maps',
+                      };
+                      setFormData({ 
+                        ...formData, 
+                        city,
+                        name: formData.name || `${typeLabels[formData.type]} ${city}`.trim(),
+                      });
+                    }}
                     placeholder="Ташкент"
+                    required
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder:text-gray-500 focus:outline-none focus:border-white/20"
                   />
                 </div>
@@ -680,7 +836,10 @@ export default function ParserPage() {
                   <label className="block text-sm text-gray-400 mb-2">Категория поиска</label>
                   <input
                     type="text"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                     placeholder="рестораны, кафе, доставка еды"
+                    required
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder:text-gray-500 focus:outline-none focus:border-white/20"
                   />
                 </div>
@@ -689,7 +848,11 @@ export default function ParserPage() {
                   <label className="block text-sm text-gray-400 mb-2">Радиус (км)</label>
                   <input
                     type="number"
+                    value={formData.radius}
+                    onChange={(e) => setFormData({ ...formData, radius: parseInt(e.target.value) || 0 })}
                     placeholder="50"
+                    min="1"
+                    required
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder:text-gray-500 focus:outline-none focus:border-white/20"
                   />
                 </div>
@@ -698,23 +861,43 @@ export default function ParserPage() {
                   <label className="block text-sm text-gray-400 mb-2">Apify Actor ID</label>
                   <input
                     type="text"
+                    value={formData.apifyActorId}
+                    onChange={(e) => setFormData({ ...formData, apifyActorId: e.target.value })}
                     placeholder="apify/google-maps-scraper"
+                    required
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder:text-gray-500 focus:outline-none focus:border-white/20"
                   />
                 </div>
-              </div>
 
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => setShowAddSource(false)}
-                  className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
-                >
-                  Отмена
-                </button>
-                <button className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-lg hover:from-emerald-500 hover:to-emerald-400 transition-all">
-                  Создать
-                </button>
-              </div>
+                <div className="flex justify-end gap-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddSource(false);
+                      setSubmitError(null);
+                      setFormData({
+                        type: 'yandex',
+                        name: '',
+                        city: '',
+                        category: '',
+                        radius: 30,
+                        apifyActorId: '',
+                      });
+                    }}
+                    className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                    disabled={isSubmitting}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-lg hover:from-emerald-500 hover:to-emerald-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? 'Создание...' : 'Создать'}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}
