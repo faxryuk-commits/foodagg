@@ -13,6 +13,7 @@ import {
   AlertCircle,
   LogOut,
   Zap,
+  Globe,
 } from 'lucide-react';
 
 const navigation = [
@@ -21,7 +22,8 @@ const navigation = [
   { name: 'Заказы', href: '/orders', icon: ShoppingBag },
   { name: 'Пользователи', href: '/users', icon: Users },
   { name: 'Quality Control', href: '/quality', icon: AlertCircle, badge: '3' },
-  { name: 'Скрейпинг', href: '/scraping', icon: Database },
+  { name: 'Парсер заведений', href: '/parser', icon: Globe, badge: '2' },
+  { name: 'База данных', href: '/scraping', icon: Database },
   { name: 'Аналитика', href: '/analytics', icon: BarChart3 },
   { name: 'Настройки', href: '/settings', icon: Settings },
 ];
