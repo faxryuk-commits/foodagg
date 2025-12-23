@@ -14,25 +14,19 @@
 Создай **3 отдельных проекта** в Vercel:
 
 #### 1. User App
-- **Root Directory**: `apps/user-app`
-- **Framework Preset**: Next.js
-- **Build Command**: `cd ../.. && npx turbo run build --filter=@food-platform/user-app`
-- **Install Command**: `cd ../.. && npm install`
-- **Output Directory**: `.next`
+- **Root Directory** (в Settings → General): `apps/user-app`
+- **Framework Preset**: Next.js (автоопределение)
+- Build Command и Install Command уже настроены в `vercel.json`
 
 #### 2. Merchant App
-- **Root Directory**: `apps/merchant-app`
-- **Framework Preset**: Next.js
-- **Build Command**: `cd ../.. && npx turbo run build --filter=@food-platform/merchant-app`
-- **Install Command**: `cd ../.. && npm install`
-- **Output Directory**: `.next`
+- **Root Directory** (в Settings → General): `apps/merchant-app`
+- **Framework Preset**: Next.js (автоопределение)
+- Build Command и Install Command уже настроены в `vercel.json`
 
 #### 3. Admin Panel
-- **Root Directory**: `apps/admin-panel`
-- **Framework Preset**: Next.js
-- **Build Command**: `cd ../.. && npx turbo run build --filter=@food-platform/admin-panel`
-- **Install Command**: `cd ../.. && npm install`
-- **Output Directory**: `.next`
+- **Root Directory** (в Settings → General): `apps/admin-panel`
+- **Framework Preset**: Next.js (автоопределение)
+- Build Command и Install Command уже настроены в `vercel.json`
 
 ### Вариант 2: Vercel Monorepo
 
