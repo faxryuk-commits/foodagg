@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "cd ../.. && npm install",
-  "buildCommand": "cd ../.. && npx turbo run build --filter=@food-platform/user-app",
+  "buildCommand": "cd ../.. && npx turbo run build --filter=@food-platform/admin-panel",
   "outputDirectory": ".next",
   "framework": "nextjs",
-  "rootDirectory": "apps/user-app"
+  "rootDirectory": "apps/admin-panel"
 }
 
