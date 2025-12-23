@@ -14,6 +14,7 @@ import {
   LogOut,
   Zap,
   Globe,
+  Key,
 } from 'lucide-react';
 
 const navigation = [
@@ -25,6 +26,7 @@ const navigation = [
   { name: 'Парсер заведений', href: '/parser', icon: Globe, badge: '2' },
   { name: 'База данных', href: '/scraping', icon: Database },
   { name: 'Аналитика', href: '/analytics', icon: BarChart3 },
+  { name: 'API Ключи', href: '/settings/api', icon: Key },
   { name: 'Настройки', href: '/settings', icon: Settings },
 ];
 

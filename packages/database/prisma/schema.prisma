@@ -630,13 +630,22 @@ model AdminAction {
 }
 
 // ===========================================
-// SYSTEM SETTINGS
+// SYSTEM SETTINGS & CONFIG
 // ===========================================
 
 model SystemSetting {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     Json
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String   @db.Text
+  category    String   @default("general")
+  description String?
+  isEncrypted Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([category])
+  @@index([isActive])
 }
 

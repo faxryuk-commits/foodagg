@@ -16,6 +16,7 @@ import { menuRouter } from './routes/menu';
 import { reviewsRouter } from './routes/reviews';
 import { adminRouter } from './routes/admin';
 import { scrapingRouter } from './routes/scraping';
+import { configRouter } from './routes/config';
 import { setupSocketHandlers } from './socket';
 
 const app = express();
@@ -68,6 +69,7 @@ app.use('/api/merchant/menu', menuRouter);
 app.use('/api/reviews', reviewsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/admin/scraping', scrapingRouter);
+app.use('/api/config', configRouter);
 
 // Error handlers
 app.use(notFoundHandler);
