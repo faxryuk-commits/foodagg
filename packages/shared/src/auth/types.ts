@@ -1,4 +1,4 @@
-export type UserRole = 'USER' | 'MERCHANT_OWNER' | 'MERCHANT_STAFF' | 'ADMIN' | 'SUPER_ADMIN';
+import type { UserRole } from '../types';
 
 export interface AuthUser {
   id: string;
