@@ -1,5 +1,13 @@
 import { AuthUser, AuthTokens, LoginCredentials, RegisterData } from './types';
 
+// Minimal DOM stubs for server-side builds
+type HeadersInit = Record<string, string>;
+type RequestInit = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+declare const window: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+declare const localStorage: any;
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 // Storage keys
@@ -73,7 +81,7 @@ async function authRequest<T>(
     headers,
   });
   
-  const data = await response.json();
+  const data: any = await response.json();
   
   if (!response.ok) {
     // Try to refresh token if unauthorized
@@ -86,7 +94,7 @@ async function authRequest<T>(
           ...options,
           headers,
         });
-        const retryData = await retryResponse.json();
+        const retryData: any = await retryResponse.json();
         if (retryResponse.ok) {
           return retryData.data || retryData;
         }
@@ -113,7 +121,7 @@ async function refreshTokens(refreshToken: string): Promise<AuthTokens | null> {
       return null;
     }
     
-    const data = await response.json();
+    const data: any = await response.json();
     const tokens = data.data as AuthTokens;
     setStoredTokens(tokens);
     return tokens;
@@ -132,7 +140,7 @@ export const authAPI = {
       body: JSON.stringify(credentials),
     });
     
-    const data = await response.json();
+    const data: any = await response.json();
     
     if (!response.ok) {
       throw new Error(data.error?.message || 'Login failed');
@@ -157,7 +165,7 @@ export const authAPI = {
       body: JSON.stringify(data),
     });
     
-    const responseData = await response.json();
+    const responseData: any = await response.json();
     
     if (!response.ok) {
       throw new Error(responseData.error?.message || 'Registration failed');

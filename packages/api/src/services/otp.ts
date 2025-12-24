@@ -151,7 +151,7 @@ async function sendEskizSMS(phone: string, message: string): Promise<boolean> {
     }),
   });
   
-  const tokenData = await tokenResponse.json();
+  const tokenData = (await tokenResponse.json()) as any;
   if (!tokenData.data?.token) return false;
   
   const response = await fetch('https://notify.eskiz.uz/api/message/sms/send', {

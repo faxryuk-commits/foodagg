@@ -15,6 +15,7 @@ declare global {
         role: UserRole;
         merchantId?: string;
       };
+      merchantId?: string;
     }
   }
 }

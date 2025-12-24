@@ -126,9 +126,9 @@ router.post(
     const address = await prisma.address.create({
       data: {
         ...data,
-        userId: req.user!.id,
+        user: { connect: { id: req.user!.id } },
         isDefault: data.isDefault || addressCount === 0,
-      },
+      } as any,
     });
     
     res.status(201).json({

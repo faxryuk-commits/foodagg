@@ -75,7 +75,7 @@ export async function startScrapingRun(
     throw new Error(`Failed to start Apify run: ${response.statusText}`);
   }
   
-  const data = await response.json();
+  const data = (await response.json()) as any;
   
   return {
     runId: data.data.id,
@@ -96,7 +96,7 @@ export async function getRunStatus(runId: string): Promise<ApifyRunResult> {
     throw new Error(`Failed to get run status: ${response.statusText}`);
   }
   
-  const data = await response.json();
+  const data = (await response.json()) as any;
   
   return {
     runId: data.data.id,
@@ -123,7 +123,7 @@ export async function getScrapedData(
     throw new Error(`Failed to get scraped data: ${response.statusText}`);
   }
   
-  const items = await response.json();
+  const items = (await response.json()) as any[];
   
   // Normalize data based on source type
   return items.map((item: Record<string, unknown>) => 
@@ -192,67 +192,70 @@ function normalizeVenueData(
 }
 
 function normalize2GisData(data: Record<string, unknown>): ScrapedVenue {
+  const d = data as any;
   return {
-    externalId: String(data.id || data.firmId || ''),
+    externalId: String(d.id || d.firmId || ''),
     source: '2gis',
-    name: String(data.name || data.title || ''),
-    address: String(data.address || data.addressName || ''),
-    city: String(data.city || ''),
-    lat: Number(data.lat || data.point?.lat || 0),
-    lng: Number(data.lng || data.point?.lon || 0),
-    phone: String(data.phone || (data.contacts as any)?.phone || ''),
-    website: String(data.website || data.url || ''),
-    rating: Number(data.rating || 0),
-    reviewCount: Number(data.reviewCount || data.reviews_count || 0),
-    categories: (data.rubrics as string[]) || [],
-    workingHours: data.schedule as Record<string, string> || {},
-    photos: (data.photos as string[]) || [],
-    rawData: data,
+    name: String(d.name || d.title || ''),
+    address: String(d.address || d.addressName || ''),
+    city: String(d.city || ''),
+    lat: Number(d.lat || d.point?.lat || 0),
+    lng: Number(d.lng || d.point?.lon || 0),
+    phone: String(d.phone || d.contacts?.phone || ''),
+    website: String(d.website || d.url || ''),
+    rating: Number(d.rating || 0),
+    reviewCount: Number(d.reviewCount || d.reviews_count || 0),
+    categories: (d.rubrics as string[]) || [],
+    workingHours: (d.schedule as Record<string, string>) || {},
+    photos: (d.photos as string[]) || [],
+    rawData: d,
   };
 }
 
 function normalizeYandexData(data: Record<string, unknown>): ScrapedVenue {
-  const coords = data.coordinates as { lat: number; lng: number } || { lat: 0, lng: 0 };
+  const d = data as any;
+  const coords = (d.coordinates as { lat: number; lng: number }) || { lat: 0, lng: 0 };
   
   return {
-    externalId: String(data.id || data.oid || ''),
+    externalId: String(d.id || d.oid || ''),
     source: 'yandex',
-    name: String(data.name || data.title || ''),
-    address: String(data.address || ''),
-    city: String(data.city || ''),
+    name: String(d.name || d.title || ''),
+    address: String(d.address || ''),
+    city: String(d.city || ''),
     lat: coords.lat,
     lng: coords.lng,
-    phone: String(data.phone || data.phones?.[0] || ''),
-    website: String(data.website || data.url || ''),
-    rating: Number(data.rating || data.stars || 0),
-    reviewCount: Number(data.reviewCount || data.reviews || 0),
-    categories: (data.categories as string[]) || [],
-    workingHours: data.workingTime as Record<string, string> || {},
-    photos: (data.images as string[]) || [],
-    rawData: data,
+    phone: String(d.phone || d.phones?.[0] || ''),
+    website: String(d.website || d.url || ''),
+    rating: Number(d.rating || d.stars || 0),
+    reviewCount: Number(d.reviewCount || d.reviews || 0),
+    categories: (d.categories as string[]) || [],
+    workingHours: (d.workingTime as Record<string, string>) || {},
+    photos: (d.images as string[]) || [],
+    rawData: d,
   };
 }
 
 function normalizeGoogleData(data: Record<string, unknown>): ScrapedVenue {
-  const location = data.location as { lat: number; lng: number } || { lat: 0, lng: 0 };
+  const d = data as any;
+  const location = (d.location as { lat: number; lng: number }) || { lat: 0, lng: 0 };
   
   return {
-    externalId: String(data.placeId || data.cid || ''),
+    externalId: String(d.placeId || d.cid || ''),
     source: 'google',
-    name: String(data.title || data.name || ''),
-    address: String(data.address || data.street || ''),
-    city: String(data.city || ''),
-    lat: location.lat || Number(data.latitude || 0),
-    lng: location.lng || Number(data.longitude || 0),
-    phone: String(data.phone || data.phoneUnformatted || ''),
-    website: String(data.website || data.url || ''),
-    rating: Number(data.totalScore || data.rating || 0),
-    reviewCount: Number(data.reviewsCount || 0),
-    categories: (data.categories as string[]) || [String(data.categoryName || '')],
-    priceLevel: Number(data.priceLevel || 0),
-    workingHours: parseGoogleHours(data.openingHours),
-    photos: ((data.imageUrls as string[]) || []).slice(0, 5),
-    rawData: data,
+    name: String(d.title || d.name || ''),
+    address: String(d.address || d.street || ''),
+    city: String(d.city || ''),
+    lat: location.lat || Number(d.latitude || 0),
+    lng: location.lng || Number(d.longitude || 0),
+    phone: String(d.phone || d.phoneUnformatted || ''),
+    website: String(d.website || d.url || ''),
+    rating: Number(d.totalScore || d.rating || 0),
+    reviewCount: Number(d.reviewsCount || 0),
+    categories: (d.categories as string[]) || [String(d.categoryName || '')],
+    priceLevel: Number(d.priceLevel || 0),
+    workingHours: parseGoogleHours(d.openingHours),
+    photos: ((d.imageUrls as string[]) || []).slice(0, 5),
+    rawData: d,
   };
 }
 

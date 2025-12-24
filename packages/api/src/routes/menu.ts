@@ -52,9 +52,9 @@ router.post(
     const category = await prisma.menuCategory.create({
       data: {
         ...data,
-        merchantId: req.merchantId!,
+        merchant: { connect: { id: req.merchantId! } },
         position: data.position ?? (lastCategory?.position ?? 0) + 1,
-      },
+      } as any,
     });
     
     res.status(201).json({
@@ -199,10 +199,10 @@ router.post(
     const item = await prisma.menuItem.create({
       data: {
         ...data,
-        merchantId: req.merchantId!,
+        merchant: { connect: { id: req.merchantId! } },
         position: data.position ?? (lastItem?.position ?? 0) + 1,
         options: data.options as never,
-      },
+      } as any,
     });
     
     res.status(201).json({
